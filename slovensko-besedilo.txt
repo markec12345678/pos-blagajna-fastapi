@@ -1,0 +1,60 @@
+Najboljši brezplačni in odprtokodni sistemi za blagajne v restavracijah, hotelih in lokalih:
+
+1. URY - FOSS sistem za upravljanje restavracij, ki temelji na ERPNext
+   - Zvezde: 297
+   - Licenca: AGPL-3.0
+   - URL: https://github.com/ury-erp/ury
+   - Opis: Celovit sistem za upravljanje restavracij z odprto kodo
+   - Podroben opis:
+     * Temelji na znani odprto-kodni platformi ERPNext
+     * Vključuje POS sistem za blagajno z možnostmi za notranje porabe, oddajanje, dostavo in delo brez povezave
+     * Vključuje sistem za prikaz v kuhinji (Kitchen Display System) za realnočasovno sledenje naročilom
+     * Omogoča analizo poslovanja in vodenje evidence dobička in izdatkov
+     * Ima podporo za več različnih naprav (računalniki, tablice, pametni telefoni)
+     * Omogoča upravljanje menijev in receptov z možnostjo povezave s sistemom zalog
+     * Vključuje možnosti za vodenje evidencije miz in spremljanje časa zasedenosti
+     * Podpira več produkcijskih enot za več kuhinj
+     - Namestitev:
+       * Potrebuje najmanj Node verzijo 19.20+
+       * Zahteva nameščen Frappe okolje
+       * Namestitev poteka preko ukazne vrstice z ukazi bench
+       * Potrebno je ustvariti novo stran za URY
+       * Zahteva namestitev ERPNext in Frappe HR aplikacij
+
+2. Restaurant POS System (amritmaurya1504)
+   - Zvezde: 233
+   - Licenca: Ni navedene licence
+   - URL: https://github.com/amritmaurya1504/Restaurant_POS_System
+   - Opis: Celovit sistem za blagajno v restavraciji, zgrajen s pomočjo MERN tehnologij
+
+3. XiaoMu PosSystem
+   - Zvezde: 307
+   - Licenca: MIT
+   - URL: https://github.com/vhvy/XiaoMu-PosSystem
+   - Opis: Sistem za blagajno za male trgovine z naprednim vmesnikom
+
+4. Hunts Point POS
+   - Zvezde: 186
+   - Licenca: MIT
+   - URL: https://github.com/tariqbuilds/hunts-point-pos
+   - Opis: Realnočasovni preprost spletni sistem za blagajno, napisan v Node.js in Angular.js
+
+5. CS10 Restaurant POS
+   - Zvezde: 150
+   - Licenca: Ni navedene licence
+   - URL: https://github.com/BloomTech-Labs/CS10-restaurant-pos
+   - Opis: Sistem za blagajno v restavraciji, zgrajen s pomočjo MongoDB, React, Node in Express
+
+6. Posify
+   - Zvezde: 7
+   - Licenca: Ni navedene licence
+   - URL: https://github.com/AWIXOR-zz/posify
+   - Opis: Program za upravljanje blagajne in zaloge za kavarne, trgovine in druge podjetja
+
+7. Todocash
+   - Zvezde: 7
+   - Licenca: Ni navedene licence
+   - URL: https://github.com/wamtengineers/todocash
+   - Opis: Sistem za blagajno za majhne kavarne in trgovine z več uporabniškimi ravmi
+
+Najbolj priporočljiv je URY zaradi visoke številk zvezd in dejstva, da temelji na znani platformi ERPNext. Druga možnost je XiaoMu PosSystem, ki ima še več zvezd in ugodno licenco MIT.

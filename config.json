@@ -1,0 +1,15 @@
+{
+  "database": {
+    "path": "restaurant.db"
+  },
+  "app": {
+    "name": "URY Restaurant Management System",
+    "version": "1.0.0",
+    "debug": false
+  },
+  "defaults": {
+    "table_capacity": 4,
+    "default_tax_rate": 0.08,
+    "currency_symbol": "$"
+  }
+}

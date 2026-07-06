@@ -1,0 +1,39 @@
+services:
+  # ── Main POS app ──
+  pos:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - pos_data:/app/data
+    environment:
+      - DATABASE_URL=sqlite:////app/data/pos.db
+      - CORS_ORIGINS=["*"]
+      - APP_NAME=POS Restaurant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/tables')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ── Optional: PostgreSQL (uncomment and set DATABASE_URL to use) ──
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: pos
+  #     POSTGRES_USER: pos
+  #     POSTGRES_PASSWORD: pos_secret_2026
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U pos"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  pos_data:
+  # pg_data:
