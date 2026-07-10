@@ -9,7 +9,7 @@ export default function NotificationsBell() {
     const result: any[] = []
     try {
       const [invR, poR, srR, salesR] = await Promise.all([
-        fetch('/api/v1/inventory?branch_id=0'),
+        fetch('/api/v1/inventory/ingredients?branch_id=0'),
         fetch('/api/v1/suppliers/orders?status=pending'),
         fetch('/api/v1/service-requests?status=pending'),
         fetch('/api/v1/analytics/sales-targets'),

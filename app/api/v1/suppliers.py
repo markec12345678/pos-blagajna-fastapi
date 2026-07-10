@@ -53,26 +53,7 @@ def delete_supplier(supplier_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.get("/{supplier_id}")
-def get_supplier(supplier_id: int, db: Session = Depends(get_db)):
-    s = db.query(Supplier).filter(Supplier.id == supplier_id).first()
-    if not s:
-        raise HTTPException(404, "Supplier not found")
-    ingredients = db.query(Ingredient).filter(Ingredient.supplier_id == supplier_id).all()
-    return {
-        "id": s.id, "name": s.name, "contact": s.contact, "phone": s.phone,
-        "email": s.email, "address": s.address, "notes": s.notes, "branch_id": s.branch_id,
-        "ingredients": [{"id": i.id, "name": i.name, "unit": i.unit, "stock": i.stock, "min_stock": i.min_stock, "cost_per_unit": i.cost_per_unit} for i in ingredients]
-    }
-
-
-@router.get("/{supplier_id}/ingredients")
-def supplier_ingredients(supplier_id: int, db: Session = Depends(get_db)):
-    ingredients = db.query(Ingredient).filter(Ingredient.supplier_id == supplier_id).order_by(Ingredient.name).all()
-    return [{"id": i.id, "name": i.name, "unit": i.unit, "category": i.category, "stock": i.stock, "min_stock": i.min_stock, "cost_per_unit": i.cost_per_unit} for i in ingredients]
-
-
-# ── Purchase Orders ──
+# ── Purchase Orders (must be before /{supplier_id} catch-all) ──
 
 def _po_json(po: PurchaseOrder, db: Session):
     items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po.id).all()
@@ -208,6 +189,25 @@ def cancel_order(po_id: int, db: Session = Depends(get_db)):
 
 @router.post("/orders/auto-generate")
 def auto_generate_orders(supplier_id: int = 0, db: Session = Depends(get_db)):
+
+
+@router.get("/{supplier_id}")
+def get_supplier(supplier_id: int, db: Session = Depends(get_db)):
+    s = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not s:
+        raise HTTPException(404, "Supplier not found")
+    ingredients = db.query(Ingredient).filter(Ingredient.supplier_id == supplier_id).all()
+    return {
+        "id": s.id, "name": s.name, "contact": s.contact, "phone": s.phone,
+        "email": s.email, "address": s.address, "notes": s.notes, "branch_id": s.branch_id,
+        "ingredients": [{"id": i.id, "name": i.name, "unit": i.unit, "stock": i.stock, "min_stock": i.min_stock, "cost_per_unit": i.cost_per_unit} for i in ingredients]
+    }
+
+
+@router.get("/{supplier_id}/ingredients")
+def supplier_ingredients(supplier_id: int, db: Session = Depends(get_db)):
+    ingredients = db.query(Ingredient).filter(Ingredient.supplier_id == supplier_id).order_by(Ingredient.name).all()
+    return [{"id": i.id, "name": i.name, "unit": i.unit, "category": i.category, "stock": i.stock, "min_stock": i.min_stock, "cost_per_unit": i.cost_per_unit} for i in ingredients]
     q = db.query(Ingredient).filter(
         Ingredient.stock <= Ingredient.min_stock,
         Ingredient.min_stock > 0

@@ -14,7 +14,7 @@ export default function PurchaseOrderPage({ onNotify }: { onNotify?: (msg: strin
     const url = filter ? `/api/v1/suppliers/orders?status=${filter}` : '/api/v1/suppliers/orders'
     const [r, s, i] = await Promise.all([
       fetch(url), fetch('/api/v1/suppliers?branch_id=0'),
-      fetch('/api/v1/inventory?branch_id=0')
+      fetch('/api/v1/inventory/ingredients?branch_id=0')
     ])
     if (r.ok) setOrders(await r.json())
     if (s.ok) setSuppliers(await s.json())

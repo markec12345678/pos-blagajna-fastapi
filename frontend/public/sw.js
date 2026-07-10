@@ -1,4 +1,4 @@
-const CACHE = 'pos-v1'
+const CACHE = 'pos-v2'
 const ASSETS = ['/', '/manifest.json', '/icon-192.svg']
 
 self.addEventListener('install', e => {
@@ -13,6 +13,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url)
+
+  // Only handle http/https requests
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return
 
   // API requests - try network, queue if offline
   if (url.pathname.startsWith('/api/') && !navigator.onLine) {
