@@ -23,42 +23,38 @@ export default function Dashboard({ onNotify }: { onNotify: (msg: string) => voi
   useEffect(() => { refresh(); const iv = setInterval(refresh, 30000); return () => clearInterval(iv) }, [refresh])
   useWebSocket((evt) => { if (['order_created', 'order_closed'].includes(evt.event)) refresh() })
 
+  // Stat configuration
+  const stats = [
+    { label: 'Današnja prodaja', value: `${dash?.today_sales?.toFixed(2) || '0.00'} €`, emoji: '💰', color: 'green' },
+    { label: 'Napitnine', value: `${dash?.today_tips?.toFixed(2) || '0.00'} €`, emoji: '💵', color: 'amber' },
+    { label: 'Odprta naročila', value: `${dash?.open_orders || 0}`, emoji: '📋', color: 'blue' },
+    { label: 'Proste mize', value: `${dash?.free_tables || 0}/${dash?.total_tables || 0}`, emoji: '🪑', color: 'teal' },
+    { label: 'Zaključena danes', value: `${dash?.today_orders || orders.length}`, emoji: '✅', color: 'purple' },
+    { label: 'Rezervacije danes', value: `${dash?.today_reservations || 0}`, emoji: '📅', color: 'orange' },
+  ]
+
   return (
-    <div className="dash-page">
-      <div className="dash-header">
-        <h2>📊 Pregled</h2>
+    <div className="dash-page" style={{ padding: '20px', background: 'var(--surface2)' }}>
+      <div className="dash-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', padding: '0 4px' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: '800', margin: '0' }}>📊 Pregled</h2>
         <button onClick={() => { setLoading(true); refresh() }} className="btn btn-sm btn-ghost">{loading ? '⏳' : '🔄'}</button>
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text2)' }}>⏳ Nalaganje...</div>
+        <div style={{ textAlign: 'center', padding: '80px', color: 'var(--text2)', fontSize: '18px' }}>⏳ Nalaganje...</div>
       ) : (
         <div>
-          <div className="stat-grid dash-stats">
-            <div className="stat-card">
-              <div className="stat-value green">{dash?.today_sales?.toFixed(2)} €</div>
-              <div className="stat-label">Današnja prodaja</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value" style={{ color: 'var(--gold, #f59e0b)' }}>{dash?.today_tips?.toFixed(2)} €</div>
-              <div className="stat-label">Napitnine</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{dash?.open_orders}</div>
-              <div className="stat-label">Odprta naročila</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{dash?.free_tables}/{dash?.total_tables}</div>
-              <div className="stat-label">Proste mize</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value">{dash?.today_orders || orders.length}</div>
-              <div className="stat-label">Zaključena danes</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-value" style={{ color: 'var(--blue)' }}>{dash?.today_reservations || 0}</div>
-              <div className="stat-label">Rezervacije danes</div>
-            </div>
+          {/* Modern Stat Cards Grid */}
+          <div className="dashboard-grid">
+            {stats.map((stat, idx) => (
+              <div key={idx} className="stat-card">
+                <div className={`stat-icon ${stat.color}`}>{stat.emoji}</div>
+                <div className="stat-content">
+                  <p className="stat-value">{stat.value}</p>
+                  <p className="stat-label">{stat.label}</p>
+                </div>
+              </div>
+            ))}
           </div>
 
           {comparison && (

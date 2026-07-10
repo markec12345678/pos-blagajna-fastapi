@@ -93,11 +93,85 @@ import './App.css'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
   })
 }
 
-type Page = 'pos' | 'kds' | 'dashboard' | 'manager-dashboard' | 'closing' | 'cross-sell' | 'service-requests' | 'inventory' | 'analytics' | 'menu-editor' | 'combos' | 'media-library' | 'prep-list' | 'recipe-scale' | 'sales-targets' | 'purchase-orders' | 'floor-plan' | 'settings' | 'zreport' | 'users' | 'backup' | 'tables' | 'audit' | 'cash' | 'suppliers' | 'reservations' | 'shifts' | 'variance' | 'gift-cards' | 'branches' | 'qr-codes' | 'branch-compare' | 'menu-versions' | 'scheduled' | 'receipts' | 'customers' | 'modifiers' | 'courses' | 'order-history' | 'stocktaking' | 'promotions' | 'popularity' | 'ratings' | 'loyalty' | 'loyalty-tiers' | 'order-templates' | 'order-merge' | 'import-data' | 'system-health' | 'marketing' | 'catering' | 'invoices' | 'kds-analytics' | 'employees' | 'delivery' | 'food-costs' | 'menu-eng' | 'labor-costs' | 'profit-loss' | 'waste' | 'export' | 'sales-forecast' | 'yoy' | 'expenses' | 'rfm' | 'inv-forecast' | 'budgets' | 'schedule' | 'price-rules' | 'recipe-optimizer' | 'waitlist' | 'bulk-prices' | 'tip-pool' | 'house-accounts'
+type Page =
+  | 'pos'
+  | 'kds'
+  | 'dashboard'
+  | 'manager-dashboard'
+  | 'closing'
+  | 'cross-sell'
+  | 'service-requests'
+  | 'inventory'
+  | 'analytics'
+  | 'menu-editor'
+  | 'combos'
+  | 'media-library'
+  | 'prep-list'
+  | 'recipe-scale'
+  | 'sales-targets'
+  | 'purchase-orders'
+  | 'floor-plan'
+  | 'settings'
+  | 'zreport'
+  | 'users'
+  | 'backup'
+  | 'tables'
+  | 'audit'
+  | 'cash'
+  | 'suppliers'
+  | 'reservations'
+  | 'shifts'
+  | 'variance'
+  | 'gift-cards'
+  | 'branches'
+  | 'qr-codes'
+  | 'branch-compare'
+  | 'menu-versions'
+  | 'scheduled'
+  | 'receipts'
+  | 'customers'
+  | 'modifiers'
+  | 'courses'
+  | 'order-history'
+  | 'stocktaking'
+  | 'promotions'
+  | 'popularity'
+  | 'ratings'
+  | 'loyalty'
+  | 'loyalty-tiers'
+  | 'order-templates'
+  | 'order-merge'
+  | 'import-data'
+  | 'system-health'
+  | 'marketing'
+  | 'catering'
+  | 'invoices'
+  | 'kds-analytics'
+  | 'employees'
+  | 'delivery'
+  | 'food-costs'
+  | 'menu-eng'
+  | 'labor-costs'
+  | 'profit-loss'
+  | 'waste'
+  | 'export'
+  | 'sales-forecast'
+  | 'yoy'
+  | 'expenses'
+  | 'rfm'
+  | 'inv-forecast'
+  | 'budgets'
+  | 'schedule'
+  | 'price-rules'
+  | 'recipe-optimizer'
+  | 'waitlist'
+  | 'bulk-prices'
+  | 'tip-pool'
+  | 'house-accounts'
 
 export default function App() {
   const [isCustomer, setIsCustomer] = useState(false)
@@ -117,6 +191,7 @@ export default function App() {
   const [searchQ, setSearchQ] = useState('')
   const [searchRes, setSearchRes] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(false)
   let searchTimer: any
   const [lang, setLang] = useState<Lang>((localStorage.getItem('pos-lang') as Lang) || 'sl')
   const [branches, setBranches] = useState<any[]>([])
@@ -124,7 +199,6 @@ export default function App() {
   useEffect(() => { document.body.classList.toggle('dark', dark); localStorage.setItem('pos-dark', String(dark)) }, [dark])
   useEffect(() => { localStorage.setItem('pos-lang', lang) }, [lang])
   useEffect(() => { if (curBranch) localStorage.setItem('pos-branch', String(curBranch)) }, [curBranch])
-  // Load branches when logged in
   useEffect(() => {
     fetch('/api/v1/branches', { headers: api.authHeader() }).then(r => r.json()).then(b => {
       setBranches(b)
@@ -145,6 +219,90 @@ export default function App() {
     try { const d = await api.pinLogin(pinInput); setUser(d.user); setLogged(true); setPinDialog(false); setPinInput('') }
     catch (ex: any) { setPinErr(ex.message) }
   }
+
+  // Quick access nav items
+  const quickNavItems: { key: Page; icon: string }[] = [
+    { key: 'pos', icon: '💳' },
+    { key: 'kds', icon: '🍳' },
+    { key: 'dashboard', icon: '📊' },
+  ];
+  
+  // Grouped pages for sidebar/dropdown
+  const pageGroups: { label: string; pages: { key: Page; icon: string }[] }[] = [
+    {
+      label: 'Operacije',
+      pages: [
+        { key: 'waitlist', icon: '📋' },
+        { key: 'reservations', icon: '📅' },
+        { key: 'tables', icon: '🪑' },
+      ]
+    },
+    {
+      label: 'Meniji',
+      pages: [
+        { key: 'menu-editor', icon: '📝' },
+        { key: 'combos', icon: '📦' },
+        { key: 'courses', icon: '📋' },
+        { key: 'menu-versions', icon: '📅' },
+        { key: 'price-rules', icon: '💰' },
+        { key: 'modifiers', icon: '⚙️' },
+      ]
+    },
+    {
+      label: 'Inventura',
+      pages: [
+        { key: 'inventory', icon: '📦' },
+        { key: 'inv-forecast', icon: '📦' },
+        { key: 'purchase-orders', icon: '📦' },
+        { key: 'suppliers', icon: '🏭' },
+        { key: 'waste', icon: '🗑️' },
+      ]
+    },
+    {
+      label: 'Stranke',
+      pages: [
+        { key: 'customers', icon: '👤' },
+        { key: 'loyalty', icon: '🎁' },
+        { key: 'loyalty-tiers', icon: '🏆' },
+        { key: 'gift-cards', icon: '🎁' },
+      ]
+    },
+    {
+      label: 'Promocije',
+      pages: [
+        { key: 'promotions', icon: '🏷️' },
+        { key: 'marketing', icon: '📧' },
+        { key: 'popularity', icon: '📊' },
+      ]
+    },
+    {
+      label: 'Osebje',
+      pages: [
+        { key: 'users', icon: '👥' },
+        { key: 'employees', icon: '👥' },
+        { key: 'schedule', icon: '📅' },
+        { key: 'shifts', icon: '⏰' },
+        { key: 'tip-pool', icon: '💵' },
+      ]
+    },
+    {
+      label: 'Poročila',
+      pages: [
+        { key: 'analytics', icon: '📈' },
+        { key: 'profit-loss', icon: '📊' },
+        { key: 'food-costs', icon: '💰' },
+        { key: 'labor-costs', icon: '👥' },
+      ]
+    },
+    {
+      label: 'Ostalo',
+      pages: [
+        { key: 'settings', icon: '⚙️' },
+        { key: 'cash', icon: '💰' },
+        { key: 'backup', icon: '💾' },
+      ]
+    },
+  ];
 
   if (isCustomer) {
     const path = window.location.pathname
@@ -201,97 +359,29 @@ export default function App() {
     </LangContext.Provider>
   )
 
-  const pages: { key: Page; icon: string }[] = [
-    { key: 'pos', icon: '💳' },
-    { key: 'kds', icon: '🍳' },
-    { key: 'dashboard', icon: '📊' },
-    { key: 'manager-dashboard', icon: '👔' },
-    { key: 'closing', icon: '🌙' },
-    { key: 'analytics', icon: '📈' },
-    { key: 'menu-editor', icon: '📝' },
-    { key: 'cross-sell', icon: '🔗' },
-    { key: 'service-requests', icon: '🔔' },
-    { key: 'combos', icon: '📦' },
-    { key: 'media-library', icon: '🖼️' },
-    { key: 'prep-list', icon: '📋' },
-    { key: 'recipe-scale', icon: '🧮' },
-    { key: 'sales-targets', icon: '🎯' },
-    { key: 'purchase-orders', icon: '📦' },
-    { key: 'floor-plan', icon: '🏗️' },
-    { key: 'courses', icon: '📋' },
-    { key: 'zreport', icon: '📋' },
-    { key: 'shifts', icon: '⏰' },
-    { key: 'variance', icon: '📉' },
-    { key: 'stocktaking', icon: '📦' },
-    { key: 'reservations', icon: '📅' },
-    { key: 'scheduled', icon: '📆' },
-    { key: 'suppliers', icon: '🏭' },
-    { key: 'inventory', icon: '📦' },
-    { key: 'users', icon: '👥' },
-    { key: 'tables', icon: '🪑' },
-    { key: 'settings', icon: '⚙️' },
-    { key: 'cash', icon: '💰' },
-    { key: 'audit', icon: '📋' },
-    { key: 'backup', icon: '💾' },
-    { key: 'gift-cards', icon: '🎁' },
-    { key: 'branches', icon: '🏢' },
-    { key: 'qr-codes', icon: '📱' },
-    { key: 'branch-compare', icon: '📊' },
-    { key: 'menu-versions', icon: '📅' },
-    { key: 'receipts', icon: '🧾' },
-    { key: 'customers', icon: '👤' },
-    { key: 'modifiers', icon: '⚙️' },
-    { key: 'order-history', icon: '📋' },
-    { key: 'promotions', icon: '🏷️' },
-    { key: 'popularity', icon: '📊' },
-    { key: 'ratings', icon: '⭐' },
-    { key: 'loyalty', icon: '🎁' },
-    { key: 'order-templates', icon: '📋' },
-    { key: 'order-merge', icon: '🔀' },
-    { key: 'import-data', icon: '📥' },
-    { key: 'system-health', icon: '🩺' },
-    { key: 'loyalty-tiers', icon: '🏆' },
-    { key: 'marketing', icon: '📧' },
-    { key: 'catering', icon: '🎉' },
-    { key: 'invoices', icon: '🧾' },
-    { key: 'kds-analytics', icon: '⏱️' },
-    { key: 'employees', icon: '👥' },
-    { key: 'delivery', icon: '🛵' },
-    { key: 'food-costs', icon: '💰' },
-    { key: 'menu-eng', icon: '📊' },
-    { key: 'labor-costs', icon: '👥' },
-    { key: 'profit-loss', icon: '📊' },
-    { key: 'waste', icon: '🗑️' },
-    { key: 'export', icon: '📤' },
-    { key: 'sales-forecast', icon: '🔮' },
-    { key: 'yoy', icon: '📅' },
-    { key: 'expenses', icon: '💰' },
-    { key: 'rfm', icon: '🎯' },
-    { key: 'inv-forecast', icon: '📦' },
-    { key: 'budgets', icon: '📊' },
-    { key: 'schedule', icon: '📅' },
-    { key: 'price-rules', icon: '💰' },
-    { key: 'recipe-optimizer', icon: '🔧' },
-    { key: 'waitlist', icon: '📋' },
-    { key: 'bulk-prices', icon: '💰' },
-    { key: 'tip-pool', icon: '💵' },
-    { key: 'house-accounts', icon: '🏦' },
-  ]
-
   return (
     <LangContext.Provider value={lang}>
     <div className="app-root">
       <header className="header">
-        <h1 onClick={() => setPage('pos')}>🍽️ {t('app.title')}</h1>
-        <div className="header-controls">
-          <nav>
-            {pages.map(pp => (
+        <div className="header-left">
+          <button className="hamburger-btn" onClick={() => setShowSidebar(!showSidebar)}>
+            ☰
+          </button>
+          <h1 onClick={() => setPage('pos')}>🍽️ {t('app.title')}</h1>
+        </div>
+        
+        <div className="header-center">
+          <nav className="nav-quick">
+            {quickNavItems.map(pp => (
               <button key={pp.key} onClick={() => setPage(pp.key)}
                 className={`nav-btn ${page === pp.key ? 'active' : ''}`}>
-                {pp.icon} {t(`nav.${pp.key}`)}
+                {pp.icon}
               </button>
             ))}
           </nav>
+        </div>
+        
+        <div className="header-controls">
           <div className="search-wrap" style={{ position: 'relative' }}>
             <input className="input" placeholder={`🔍 ${t('common.search')}...`} value={searchQ}
               onChange={e => {
@@ -309,33 +399,28 @@ export default function App() {
                 }, 300)
               }}
               onKeyDown={e => e.key === 'Escape' && (setSearchQ(''), setSearchRes([]))}
-              style={{ width: 180, fontSize: 12, padding: '4px 8px' }} />
+              style={{ width: 180, fontSize: 12, padding: '6px 12px', borderRadius: 20 }} />
             {searchRes.length > 0 && (
-              <div style={{
+              <div className="search-dropdown" style={{
                 position: 'absolute', top: '100%', right: 0, minWidth: 320,
                 background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 8, boxShadow: 'var(--shadow-lg)', zIndex: 1000,
+                borderRadius: 12, boxShadow: 'var(--shadow-lg)', zIndex: 1000,
                 maxHeight: 400, overflowY: 'auto', marginTop: 4
               }}>
                 {searchRes.map((r, i) => (
                   <button key={`${r.type}-${r.id}-${i}`} onClick={() => {
                     setPage(r.page as Page)
                     setSearchQ(''); setSearchRes([])
-                  }} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--border)',
-                    background: 'transparent', color: 'var(--text)', cursor: 'pointer',
-                    fontSize: 13, textAlign: 'left'
-                  }}>
-                    <span style={{ fontSize: 16 }}>
+                  }} className="search-item">
+                    <span className="search-item-icon">
                       {r.type === 'order' ? '📋' : r.type === 'menu' ? '🍽️' : r.type === 'customer' ? '👤' :
                        r.type === 'invoice' ? '🧾' : r.type === 'reservation' ? '📅' : r.type === 'user' ? '👥' :
                        r.type === 'promotion' ? '🏷️' : r.type === 'catering' ? '🎉' : r.type === 'supplier' ? '🏭' :
                        r.type === 'gift_card' ? '🎁' : '📌'}
                     </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 12 }}>{r.label}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text2)' }}>{r.type}</div>
+                    <div className="search-item-info">
+                      <div className="search-item-name">{r.label}</div>
+                      <div className="search-item-type">{r.type}</div>
                     </div>
                   </button>
                 ))}
@@ -347,7 +432,7 @@ export default function App() {
           <button onClick={() => setDark(!dark)} className="nav-btn" title="Temni način">{dark ? '☀️' : '🌙'}</button>
           {branches.length > 1 && (
             <select className="input" value={curBranch || ''} onChange={e => setCurBranch(parseInt(e.target.value) || null)}
-              style={{ width: 140, fontSize: 12, padding: '2px 4px' }}>
+              style={{ width: 140, fontSize: 12, padding: '4px 8px', borderRadius: 8 }}>
               {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           )}
@@ -355,6 +440,31 @@ export default function App() {
           <span className="header-user">{user?.full_name}</span>
         </div>
       </header>
+
+      {showSidebar && (
+        <div className="sidebar-overlay" onClick={() => setShowSidebar(false)}></div>
+      )}
+      
+      <aside className={`app-sidebar ${showSidebar ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <h3>Povezave</h3>
+          <button onClick={() => setShowSidebar(false)} className="sidebar-close">✕</button>
+        </div>
+        <div className="sidebar-content">
+          {pageGroups.map((group, gi) => (
+            <div key={gi} className="sidebar-group">
+              <div className="sidebar-group-label">{group.label}</div>
+              {group.pages.map(pp => (
+                <button key={pp.key} onClick={() => { setPage(pp.key); setShowSidebar(false); }}
+                  className={`sidebar-item ${page === pp.key ? 'active' : ''}`}>
+                  <span className="sidebar-item-icon">{pp.icon}</span>
+                  <span className="sidebar-item-text">{t(`nav.${pp.key}`)}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </aside>
 
       {notif && <div className="toast">{notif}</div>}
       <OfflineIndicator />
@@ -366,6 +476,27 @@ export default function App() {
         {page === 'analytics' && <Analytics onNotify={notify} />}
         {page === 'menu-editor' && <MenuEditor onNotify={notify} />}
         {page === 'combos' && <ComboPage onNotify={notify} />}
+        {page === 'inventory' && <Inventory onNotify={notify} />}
+        {page === 'tables' && <TablesPage onNotify={notify} />}
+        {page === 'cash' && <CashRegisterPage onNotify={notify} />}
+        {page === 'customers' && <CustomersPage onNotify={notify} />}
+        {page === 'suppliers' && <SuppliersPage onNotify={notify} />}
+        {page === 'reservations' && <ReservationsPage onNotify={notify} />}
+        {page === 'waitlist' && <WaitlistPage onNotify={notify} />}
+        {page === 'settings' && <SettingsPage onNotify={notify} />}
+        {page === 'users' && <UsersPage onNotify={notify} />}
+        {page === 'backup' && <BackupPage onNotify={notify} />}
+        {page === 'audit' && <AuditLogPage onNotify={notify} />}
+        {page === 'gift-cards' && <GiftCardsPage onNotify={notify} />}
+        {page === 'modifiers' && <ModifiersPage onNotify={notify} />}
+        {page === 'courses' && <CoursesPage onNotify={notify} />}
+        {page === 'promotions' && <PromotionsPage onNotify={notify} />}
+        {page === 'loyalty' && <LoyaltyPage onNotify={notify} />}
+        {page === 'loyalty-tiers' && <LoyaltyTiersPage onNotify={notify} />}
+        {page === 'shifts' && <ShiftsPage onNotify={notify} />}
+        {page === 'schedule' && <SchedulePage onNotify={notify} />}
+        {page === 'menu-versions' && <MenuVersionsPage onNotify={notify} />}
+        {page === 'price-rules' && <PriceRulesPage onNotify={notify} />}
         {page === 'media-library' && <MediaLibraryPage onNotify={notify} />}
         {page === 'prep-list' && <PrepListPage onNotify={notify} />}
         {page === 'recipe-scale' && <RecipeScalePage onNotify={notify} />}
@@ -377,34 +508,15 @@ export default function App() {
         {page === 'cross-sell' && <CrossSellManagerPage onNotify={notify} />}
         {page === 'service-requests' && <ServiceRequestsPage onNotify={notify} />}
         {page === 'zreport' && <ZReport onNotify={notify} />}
-        {page === 'inventory' && <Inventory onNotify={notify} />}
-        {page === 'users' && <UsersPage onNotify={notify} />}
-        {page === 'tables' && <TablesPage onNotify={notify} />}
-        {page === 'cash' && <CashRegisterPage onNotify={notify} />}
-        {page === 'audit' && <AuditLogPage onNotify={notify} />}
-        {page === 'settings' && <SettingsPage onNotify={notify} />}
-        {page === 'backup' && <BackupPage onNotify={notify} />}
-        {page === 'suppliers' && <SuppliersPage onNotify={notify} />}
-        {page === 'reservations' && <ReservationsPage onNotify={notify} />}
-        {page === 'scheduled' && <ScheduledOrdersPage onNotify={notify} />}
-        {page === 'shifts' && <ShiftsPage onNotify={notify} />}
-        {page === 'variance' && <VariancePage onNotify={notify} />}
-        {page === 'gift-cards' && <GiftCardsPage onNotify={notify} />}
         {page === 'branches' && <BranchesPage onNotify={notify} />}
         {page === 'qr-codes' && <QRCodePage onNotify={notify} />}
         {page === 'branch-compare' && <BranchComparison onNotify={notify} />}
-        {page === 'menu-versions' && <MenuVersionsPage onNotify={notify} />}
-        {page === 'courses' && <CoursesPage onNotify={notify} />}
+        {page === 'scheduled' && <ScheduledOrdersPage onNotify={notify} />}
         {page === 'receipts' && <ReceiptsPage onNotify={notify} />}
-        {page === 'customers' && <CustomersPage onNotify={notify} />}
-        {page === 'modifiers' && <ModifiersPage onNotify={notify} />}
         {page === 'order-history' && <OrderHistoryPage onNotify={notify} />}
         {page === 'stocktaking' && <StocktakingPage onNotify={notify} />}
-        {page === 'promotions' && <PromotionsPage onNotify={notify} />}
         {page === 'popularity' && <PopularityPage onNotify={notify} />}
         {page === 'ratings' && <RatingsPage onNotify={notify} />}
-        {page === 'loyalty' && <LoyaltyPage onNotify={notify} />}
-        {page === 'loyalty-tiers' && <LoyaltyTiersPage onNotify={notify} />}
         {page === 'order-templates' && <OrderTemplatesPage onNotify={notify} />}
         {page === 'order-merge' && <OrderMergePage onNotify={notify} />}
         {page === 'import-data' && <ImportPage onNotify={notify} />}
@@ -427,10 +539,7 @@ export default function App() {
         {page === 'rfm' && <RFMPage onNotify={notify} />}
         {page === 'inv-forecast' && <InventoryForecastPage onNotify={notify} />}
         {page === 'budgets' && <BudgetPage onNotify={notify} />}
-        {page === 'schedule' && <SchedulePage onNotify={notify} />}
-        {page === 'price-rules' && <PriceRulesPage onNotify={notify} />}
         {page === 'recipe-optimizer' && <RecipeOptimizerPage onNotify={notify} />}
-        {page === 'waitlist' && <WaitlistPage onNotify={notify} />}
         {page === 'bulk-prices' && <BulkPriceEditor onNotify={notify} />}
         {page === 'tip-pool' && <TipPoolPage onNotify={notify} />}
         {page === 'house-accounts' && <HouseAccountsPage onNotify={notify} />}

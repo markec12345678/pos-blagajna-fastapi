@@ -50,8 +50,10 @@ self.addEventListener('fetch', e => {
 async function cacheFirst(req) {
   const cached = await caches.match(req)
   return cached || fetch(req).then(res => {
-    const clone = res.clone()
-    caches.open(CACHE).then(c => c.put(req, clone))
+    if (req.method === 'GET') {
+      const clone = res.clone()
+      caches.open(CACHE).then(c => c.put(req, clone))
+    }
     return res
   })
 }
@@ -59,8 +61,10 @@ async function cacheFirst(req) {
 async function networkFirst(req) {
   try {
     const res = await fetch(req)
-    const clone = res.clone()
-    caches.open(CACHE).then(c => c.put(req, clone))
+    if (req.method === 'GET') {
+      const clone = res.clone()
+      caches.open(CACHE).then(c => c.put(req, clone))
+    }
     return res
   } catch {
     const cached = await caches.match(req)

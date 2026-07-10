@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .env
 .agent-cache/
+.codeartsdoer/
 dist/
 *.db
 *.log

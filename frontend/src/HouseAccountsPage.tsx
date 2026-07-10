@@ -16,7 +16,8 @@ export default function HouseAccountsPage({ onNotify }: { onNotify: (m: string) 
   const [chargeDesc, setChargeDesc] = useState('')
 
   const load = async () => {
-    const d = await api.get(`/api/v1/house-accounts?search=${encodeURIComponent(search)}`)
+    const r = await fetch(`/api/v1/house-accounts?search=${encodeURIComponent(search)}`, { headers: api.authHeader() })
+    const d = await r.json()
     setAccounts(d)
   }
 
@@ -32,20 +33,22 @@ export default function HouseAccountsPage({ onNotify }: { onNotify: (m: string) 
   const searchCust = async (q: string) => {
     setCustSearch(q)
     if (q.length < 2) { setCustomers([]); return }
-    const d = await api.get(`/api/v1/customers?search=${encodeURIComponent(q)}`)
+    const r = await fetch(`/api/v1/customers?search=${encodeURIComponent(q)}`, { headers: api.authHeader() })
+    const d = await r.json()
     setCustomers(d)
   }
 
   const createAccount = async () => {
     if (!createData.customer_id) return
-    await api.post('/api/v1/house-accounts', createData)
+    await fetch('/api/v1/house-accounts', { method: 'POST', headers: { ...api.h(), 'Content-Type': 'application/json' }, body: JSON.stringify(createData) })
     setShowCreate(false)
     onNotify(t('house_accounts.created'))
     load()
   }
 
   const selectAccount = async (id: number) => {
-    const d = await api.get(`/api/v1/house-accounts/${id}`)
+    const r = await fetch(`/api/v1/house-accounts/${id}`, { headers: api.authHeader() })
+    const d = await r.json()
     setSelected(d)
     setPayAmount('')
     setChargeAmount('')
@@ -53,7 +56,7 @@ export default function HouseAccountsPage({ onNotify }: { onNotify: (m: string) 
   }
 
   const updateAccount = async (field: string, value: any) => {
-    await api.put(`/api/v1/house-accounts/${selected.id}`, { [field]: value })
+    await fetch(`/api/v1/house-accounts/${selected.id}`, { method: 'PUT', headers: { ...api.h(), 'Content-Type': 'application/json' }, body: JSON.stringify({ [field]: value }) })
     selectAccount(selected.id)
     onNotify(t('common.saved'))
   }
@@ -61,7 +64,7 @@ export default function HouseAccountsPage({ onNotify }: { onNotify: (m: string) 
   const makePayment = async () => {
     const amt = parseFloat(payAmount)
     if (!amt || amt <= 0) return
-    await api.post(`/api/v1/house-accounts/${selected.id}/pay`, { amount: amt })
+    await fetch(`/api/v1/house-accounts/${selected.id}/pay`, { method: 'POST', headers: { ...api.h(), 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: amt }) })
     selectAccount(selected.id)
     onNotify(t('house_accounts.payment_recorded'))
   }
@@ -69,7 +72,7 @@ export default function HouseAccountsPage({ onNotify }: { onNotify: (m: string) 
   const makeCharge = async () => {
     const amt = parseFloat(chargeAmount)
     if (!amt || amt <= 0) return
-    await api.post(`/api/v1/house-accounts/${selected.id}/charge`, { amount: amt, description: chargeDesc || t('house_accounts.manual_charge') })
+    await fetch(`/api/v1/house-accounts/${selected.id}/charge`, { method: 'POST', headers: { ...api.h(), 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: amt, description: chargeDesc || t('house_accounts.manual_charge') }) })
     selectAccount(selected.id)
     onNotify(t('house_accounts.charge_recorded'))
   }

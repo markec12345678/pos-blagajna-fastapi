@@ -239,36 +239,52 @@ function KdsCard({ order, urgent, isNew, onReady, onAllReady }: { order: any; ur
     grouped[cname].push(item)
   }
 
+  // Get item status for badge
+  const getItemStatus = (item: any) => {
+    if (item.status === 'ready') return 'ready'
+    if (item.elapsed_minutes > 15) return 'preparing'
+    return 'new'
+  }
+
   return (
-    <div ref={cardRef} className={`kds-card ${urgent ? 'urgent' : order.elapsed_minutes > 10 ? 'waiting' : ''} ${isNew ? 'kds-new' : ''}`}>
-      <div className="kds-card-header">
+    <div ref={cardRef} className={`kds-card ${urgent ? 'urgent' : order.elapsed_minutes > 10 ? 'waiting' : ''} ${isNew ? 'kds-new' : ''}`}
+         style={{ borderRadius: '16px', border: '2px solid var(--border)', overflow: 'hidden' }}>
+      <div className="kds-card-header" style={{ padding: '16px', background: 'var(--surface2)' }}>
         <div>
-          <div className="kds-card-table">{order.table_name}</div>
-          <div className="kds-card-meta">
+          <div className="kds-card-table" style={{ fontSize: '18px', fontWeight: '800' }}>{order.table_name}</div>
+          <div className="kds-card-meta" style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {order.customer_name || '—'} • {order.item_count} art.
-            {pendingCount < order.item_count && <span style={{ color: '#fbbf24', fontSize: 11, marginLeft: 4 }}>({pendingCount} čaka)</span>}
+            {pendingCount < order.item_count && <span className="status-badge preparing" style={{ fontSize: '10px' }}>({pendingCount} čaka)</span>}
             <span className="kds-type-badge">{typeIcon}</span>
             <button onClick={() => printKitchenOrder({ id: order.order_id, items: order.items, customer_name: order.customer_name }, order.table_name)}
               className="kds-print-btn" title="Natisni">🖨️</button>
-            <button onClick={() => onAllReady(order.order_id)} className="kds-ready-all-btn" title="Vsi pripravljeni">✓✓</button>
+            <button onClick={() => onAllReady(order.order_id)} className="kds-ready-all-btn" title="Vsi pripravljeni"
+                    style={{ background: 'var(--green)', color: '#fff', borderRadius: '8px' }}>✓✓</button>
           </div>
-          {order.notes && <div className="kds-order-note">📝 {order.notes}</div>}
-          {(() => { try { const tags = JSON.parse(order.tags || '[]'); if (!tags.length) return null; return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4 }}>{tags.map((t: string, i: number) => <span key={i} style={{ padding: '1px 6px', borderRadius: 10, fontSize: 10, fontWeight: 600, background: '#555', color: '#fff' }}>{t}</span>)}</div> } catch { return null }})()}
+          {order.notes && <div className="kds-order-note" style={{ marginTop: '8px' }}>📝 {order.notes}</div>}
+          {(() => { try { const tags = JSON.parse(order.tags || '[]'); if (!tags.length) return null; return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>{tags.map((t: string, i: number) => <span key={i} className="status-badge new" style={{ fontSize: '10px' }}>{t}</span>)}</div> } catch { return null }})()}
         </div>
-        <div className="kds-card-time">
-          <div className={`kds-card-minutes ${minColor}`}>
+        <div className="kds-card-time" style={{ textAlign: 'right' }}>
+          <div className={`kds-card-minutes ${minColor}`} style={{ fontSize: '24px', fontWeight: '800' }}>
             {Math.floor(order.elapsed_minutes)} min
           </div>
-          <div className="kds-card-wait">čakanja</div>
+          <div className="kds-card-wait" style={{ fontSize: '12px', color: 'var(--text2)' }}>čakanja</div>
         </div>
       </div>
       {Object.entries(grouped).length > 0 ? Object.entries(grouped).map(([cname, citems]) => (
-        <div key={cname}>
-          <div className="kds-course-header">{cname}</div>
+        <div key={cname} style={{ padding: '12px 16px' }}>
+          <div className="kds-course-header" style={{ fontSize: '14px', fontWeight: '700', marginBottom: '10px', color: 'var(--text2)' }}>{cname}</div>
           {citems.map((item: any) => (
-            <div key={item.id} className="kds-item">
-              <div>
-                <div className="kds-item-name">{item.quantity > 1 ? `${item.item_name} x${item.quantity}` : item.item_name}</div>
+            <div key={item.id} className="kds-item" style={{ padding: '12px', background: 'var(--surface2)', borderRadius: '12px', marginBottom: '8px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <div className="kds-item-name" style={{ fontSize: '16px', fontWeight: '700' }}>
+                    {item.quantity > 1 ? `${item.item_name} x${item.quantity}` : item.item_name}
+                  </div>
+                  <span className={`status-badge ${getItemStatus(item)}`} style={{ fontSize: '10px' }}>
+                    {getItemStatus(item) === 'ready' ? 'PRIPRAVLJENO' : getItemStatus(item) === 'preparing' ? 'PRIPRAVLJA SE' : 'NOVO'}
+                  </span>
+                </div>
                 <div className="kds-item-mods">
                   {item.notes && <span className="kds-item-note">📝 {item.notes}</span>}
                   {item.modifiers && (() => {
@@ -276,15 +292,16 @@ function KdsCard({ order, urgent, isNew, onReady, onAllReady }: { order: any; ur
                   })()}
                 </div>
               </div>
-              <div className="kds-item-actions">
-                <div className="kds-item-time">{item.elapsed_minutes > 3 ? `${item.elapsed_minutes} min` : ''}</div>
-                <button onClick={() => onReady(item.id)} className="kds-ready-btn">✓</button>
+              <div className="kds-item-actions" style={{ gap: '12px' }}>
+                <div className="kds-item-time" style={{ fontSize: '12px', fontWeight: '600' }}>{item.elapsed_minutes > 3 ? `${item.elapsed_minutes} min` : ''}</div>
+                <button onClick={() => onReady(item.id)} className="kds-ready-btn" 
+                        style={{ width: '40px', height: '40px', borderRadius: '10px', fontSize: '18px', fontWeight: '800', background: 'var(--green)', color: '#fff' }}>✓</button>
               </div>
             </div>
           ))}
         </div>
       )) : (
-        <div style={{ padding: 12, textAlign: 'center', color: 'var(--green)', fontSize: 13, fontWeight: 600 }}>✅ Vsi artikli pripravljeni</div>
+        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--green)', fontSize: '15px', fontWeight: '700' }}>✅ Vsi artikli pripravljeni</div>
       )}
     </div>
   )

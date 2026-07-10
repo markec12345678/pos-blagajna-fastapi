@@ -81,8 +81,8 @@ export default function BulkPriceEditor({ onNotify }: { onNotify: (msg: string) 
         method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: bulkAction,
-          value: bulVal,
-          category_id: bulCat ? parseInt(bulCat) : undefined
+          value: bulkVal,
+          category_id: bulkCat ? parseInt(bulkCat) : undefined
         })
       })
       const d = await r.json()
@@ -248,14 +248,14 @@ export default function BulkPriceEditor({ onNotify }: { onNotify: (msg: string) 
                   <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>
                     Vrednost (npr: +10%, -5%, +2.50, 12.99)
                   </label>
-                  <input className="input" placeholder="+10%, -5%, +2.50, 12.99" value={bulVal}
-                    onChange={e => setBulVal(e.target.value)} style={{ width: '100%' }} />
+                  <input className="input" placeholder="+10%, -5%, +2.50, 12.99" value={bulkVal}
+                    onChange={e => setBulkVal(e.target.value)} style={{ width: '100%' }} />
                 </div>
               )}
               {bulkAction === 'activate' && (
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Stanje</label>
-                  <select className="input" value={bulVal} onChange={e => setBulVal(e.target.value)} style={{ width: '100%' }}>
+                  <select className="input" value={bulkVal} onChange={e => setBulkVal(e.target.value)} style={{ width: '100%' }}>
                     <option value="activate">Aktiviraj</option>
                     <option value="deactivate">Deaktiviraj</option>
                   </select>
@@ -264,7 +264,7 @@ export default function BulkPriceEditor({ onNotify }: { onNotify: (msg: string) 
               {bulkAction === 'category' && (
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Nova kategorija</label>
-                  <select className="input" value={bulVal} onChange={e => setBulVal(e.target.value)} style={{ width: '100%' }}>
+                  <select className="input" value={bulkVal} onChange={e => setBulkVal(e.target.value)} style={{ width: '100%' }}>
                     <option value="">— Izberi —</option>
                     {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
@@ -272,7 +272,7 @@ export default function BulkPriceEditor({ onNotify }: { onNotify: (msg: string) 
               )}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Filtriraj po kategoriji (neobvezno)</label>
-                <select className="input" value={bulCat} onChange={e => setBulCat(e.target.value)} style={{ width: '100%' }}>
+                <select className="input" value={bulkCat} onChange={e => setBulkCat(e.target.value)} style={{ width: '100%' }}>
                   <option value="">— Vse kategorije —</option>
                   {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>

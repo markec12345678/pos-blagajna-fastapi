@@ -23,7 +23,7 @@ export default function MediaLibraryPage({ onNotify }: { onNotify: (msg: string)
       const fd = new FormData()
       fd.append('file', file)
       const r = await fetch('/api/v1/media/upload', {
-        method: 'POST', body: fd, headers: api.authHeader(true)
+        method: 'POST', body: fd, headers: api.authHeader()
       })
       if (!r.ok) { onNotify('Napaka pri nalaganju'); return }
       const d = await r.json()
