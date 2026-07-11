@@ -383,7 +383,6 @@ def create_app() -> FastAPI:
     frontend_dir = Path(__file__).parent.parent / "frontend" / "dist"
     if frontend_dir.exists():
         from fastapi.responses import FileResponse
-        from fastapi.staticfiles import StaticFiles
         import mimetypes
 
         receipt_dir = Path(__file__).parent.parent / "receipt_files"
