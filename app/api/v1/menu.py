@@ -113,6 +113,15 @@ def delete_category(cat_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.get("/items")
+def get_items(all: bool = False, branch_id: int = 0, db: Session = Depends(get_db)):
+    q = db.query(MenuItem)
+    if branch_id:
+        q = q.filter(MenuItem.branch_id == branch_id)
+    if not all:
+        q = q.filter(MenuItem.is_active == True)
+    return [MenuItemOut.model_validate(i) for i in q.all()]
+
 @router.post("/items", response_model=MenuItemOut)
 def create_item(item: MenuItemCreate, db: Session = Depends(get_db)):
     db_item = MenuItem(**item.model_dump())
