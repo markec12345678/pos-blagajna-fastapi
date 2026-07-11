@@ -189,6 +189,52 @@ def cancel_order(po_id: int, db: Session = Depends(get_db)):
 
 @router.post("/orders/auto-generate")
 def auto_generate_orders(supplier_id: int = 0, db: Session = Depends(get_db)):
+    q = db.query(Ingredient).filter(
+        Ingredient.stock <= Ingredient.min_stock,
+        Ingredient.min_stock > 0
+    )
+    if supplier_id:
+        q = q.filter(Ingredient.supplier_id == supplier_id)
+    low_ings = q.all()
+    if not low_ings:
+        return {"orders": [], "message": "No low-stock ingredients"}
+
+    from collections import defaultdict
+    by_supplier = defaultdict(list)
+    for ing in low_ings:
+        by_supplier[ing.supplier_id].append(ing)
+
+    suppliers = {s.id: s for s in db.query(Supplier).all()}
+    created_orders = []
+
+    for sid, ings in by_supplier.items():
+        items = []
+        for ing in ings:
+            restock_qty = max(ing.min_stock * 3 - ing.stock, ing.min_stock)
+            items.append({
+                "ingredient_id": ing.id,
+                "quantity": round(restock_qty, 1),
+                "unit_price": ing.cost_per_unit
+            })
+        total = round(sum(i["quantity"] * i["unit_price"] for i in items), 2)
+        supplier = suppliers.get(sid)
+        po = PurchaseOrder(
+            supplier_id=sid, status="pending", total=total,
+            notes=f"Auto-generated for {supplier.name if supplier else 'Unknown'}"
+        )
+        db.add(po)
+        db.flush()
+        for idata in items:
+            db.add(PurchaseOrderItem(
+                po_id=po.id, ingredient_id=idata["ingredient_id"],
+                quantity=idata["quantity"], unit_price=idata["unit_price"]
+            ))
+        log_action(db, "po_auto_generated", "purchase_order", po.id,
+                   details=f"Auto PO #{po.id} for {supplier.name if supplier else '?'}: {len(items)} items, total {total}")
+        created_orders.append({"id": po.id, "supplier": supplier.name if supplier else "?", "total": total, "items": len(items)})
+
+    db.commit()
+    return {"orders": created_orders, "message": f"Created {len(created_orders)} PO(s)"}
 
 
 @router.get("/{supplier_id}")
