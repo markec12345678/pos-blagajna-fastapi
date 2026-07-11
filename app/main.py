@@ -383,23 +383,12 @@ def create_app() -> FastAPI:
     frontend_dir = Path(__file__).parent.parent / "frontend" / "dist"
     if frontend_dir.exists():
         from fastapi.responses import FileResponse
-        app.mount("/assets", StaticFiles(directory=str(frontend_dir / "assets")), name="assets")
-        
-        # Mount receipt files
+        from fastapi.staticfiles import StaticFiles
+        import mimetypes
+
         receipt_dir = Path(__file__).parent.parent / "receipt_files"
         if receipt_dir.exists():
             app.mount("/receipt_files", StaticFiles(directory=str(receipt_dir)), name="receipt_files")
-
-        @app.websocket("/ws")
-        async def websocket_endpoint(ws: WebSocket):
-            await connect(ws)
-            try:
-                while True:
-                    await ws.receive_text()
-            except WebSocketDisconnect:
-                disconnect(ws)
-            except Exception:
-                disconnect(ws)
 
         @app.get("/manifest.json")
         async def manifest():
@@ -419,34 +408,26 @@ def create_app() -> FastAPI:
                 ]
             })
 
-        @app.get("/{full_path:path}")
-        async def serve_spa(full_path: str):
+        @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+        async def serve_frontend(full_path: str):
             if full_path.startswith("api/"):
                 return HTMLResponse(status_code=404)
             fp = frontend_dir / full_path if full_path else frontend_dir / "index.html"
             if fp.exists() and fp.is_file():
-                return FileResponse(str(fp))
-            return FileResponse(str(frontend_dir / "index.html"))
+                media_type, _ = mimetypes.guess_type(str(fp))
+                return FileResponse(str(fp), media_type=media_type)
+            return FileResponse(str(frontend_dir / "index.html"), media_type="text/html")
 
-        @app.get("/order/{table_id}")
-        async def customer_order_page(table_id: int):
-            return FileResponse(str(frontend_dir / "index.html"))
-
-        @app.get("/menu-board")
-        async def menu_board():
-            return FileResponse(str(frontend_dir / "index.html"))
-
-        @app.get("/time-clock")
-        async def time_clock():
-            return FileResponse(str(frontend_dir / "index.html"))
-
-        @app.get("/feedback")
-        async def customer_feedback():
-            return FileResponse(str(frontend_dir / "index.html"))
-
-        @app.get("/kiosk")
-        async def kiosk_page():
-            return FileResponse(str(frontend_dir / "index.html"))
+        @app.websocket("/ws")
+        async def websocket_endpoint(ws: WebSocket):
+            await connect(ws)
+            try:
+                while True:
+                    await ws.receive_text()
+            except WebSocketDisconnect:
+                disconnect(ws)
+            except Exception:
+                disconnect(ws)
 
     # Start auto-backup scheduler
     start_auto_backup()
