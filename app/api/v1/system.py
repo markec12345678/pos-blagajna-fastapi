@@ -9,28 +9,28 @@ from app.models.inventory import Ingredient
 from app.models.payment import Payment
 from app.models.user import User
 from datetime import datetime
-import os, psutil, platform
+import os, platform
 
 router = APIRouter(prefix="/system", tags=["system"])
 _start_time = datetime.now()
 
 
+@router.get("/ping")
+def ping():
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+
 @router.get("/health")
 def system_health(db: Session = Depends(get_db)):
     db_size = 0
-    db_path = ""
     try:
         result = db.execute(text("PRAGMA page_count"))
         page_count = result.scalar() or 0
         result = db.execute(text("PRAGMA page_size"))
         page_size = result.scalar() or 0
         db_size = page_count * page_size
-        db_path = str(engine.url).replace("sqlite:///", "")
     except Exception:
-        try:
-            db_path = str(engine.url)
-        except Exception:
-            db_path = "unknown"
+        pass
 
     order_count = db.query(func.count(Order.id)).scalar() or 0
     customer_count = db.query(func.count(Customer.id)).scalar() or 0
@@ -46,9 +46,10 @@ def system_health(db: Session = Depends(get_db)):
     cpu = 0
     memory = 0
     try:
+        import psutil
         cpu = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory().percent
-    except Exception:
+    except ImportError:
         pass
 
     backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "backups")
@@ -74,8 +75,7 @@ def system_health(db: Session = Depends(get_db)):
         "database": {
             "size_bytes": db_size,
             "size_mb": round(db_size / (1024 * 1024), 2),
-            "path": db_path,
-            "type": "sqlite" if "sqlite" in db_path.lower() else "postgresql",
+            "type": "sqlite" if "sqlite" in str(engine.url).lower() else "postgresql",
         },
         "records": {
             "orders": order_count,
@@ -89,6 +89,5 @@ def system_health(db: Session = Depends(get_db)):
         "backups": {
             "count": backup_count,
             "total_size_mb": round(backup_size / (1024 * 1024), 2),
-            "directory": backup_dir,
         },
     }

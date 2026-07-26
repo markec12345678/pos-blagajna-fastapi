@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface ForecastPoint { date: string; forecast: number; dow: number }
 interface HistPoint { date: string; sales: number; dow: number }
@@ -22,7 +23,7 @@ export default function SalesForecastPage({ onNotify }: { onNotify: (msg: string
   useEffect(() => {
     setLoading(true)
     fetch(`/api/v1/analytics/sales-forecast?days=${histDays}&forecast_days=${forecastDays}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     }).then(r => r.json()).then(d => { setData(d); setLoading(false) })
       .catch(() => { setLoading(false); onNotify('Napaka pri nalaganju napovedi') })
   }, [histDays, forecastDays])

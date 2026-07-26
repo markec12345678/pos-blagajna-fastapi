@@ -3,17 +3,18 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.planned_shift import PlannedShift
 from app.models.user import User
+from app.schemas.schedule import CreateShift, UpdateShift
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
 @router.post("/shifts")
-def create_shift(data: dict, db: Session = Depends(get_db)):
+def create_shift(data: CreateShift, db: Session = Depends(get_db)):
     s = PlannedShift(
-        user_id=data["user_id"], date=datetime.fromisoformat(data["date"]).date(),
-        start_time=data["start_time"], end_time=data["end_time"],
-        role=data.get("role", ""), notes=data.get("notes", ""),
-        branch_id=data.get("branch_id"), created_by=data.get("created_by")
+        user_id=data.user_id, date=datetime.fromisoformat(data.date).date(),
+        start_time=data.start_time, end_time=data.end_time,
+        role=data.role, notes=data.notes,
+        branch_id=data.branch_id, created_by=data.created_by
     )
     db.add(s); db.commit(); db.refresh(s)
     return {"id": s.id, "user_id": s.user_id, "date": str(s.date), "start": s.start_time, "end": s.end_time}
@@ -36,14 +37,13 @@ def list_shifts(date_from: str = "", date_to: str = "", user_id: int = 0, branch
     } for s in shifts]
 
 @router.put("/shifts/{shift_id}")
-def update_shift(shift_id: int, data: dict, db: Session = Depends(get_db)):
+def update_shift(shift_id: int, data: UpdateShift, db: Session = Depends(get_db)):
     s = db.query(PlannedShift).filter(PlannedShift.id == shift_id).first()
     if not s: raise HTTPException(404, "Shift not found")
-    for k in ("user_id", "date", "start_time", "end_time", "role", "notes", "branch_id", "status"):
-        if k in data:
-            v = data[k]
-            if k == "date": v = datetime.fromisoformat(v).date()
-            setattr(s, k, v)
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        if k == "date": v = datetime.fromisoformat(v).date()
+        setattr(s, k, v)
     db.commit()
     return {"ok": True}
 

@@ -12,7 +12,7 @@ export default function DeliveryPage({ onNotify }: { onNotify: (msg: string) => 
       const q = filter ? `?status=${filter}` : ''
       const r = await fetch(`/api/v1/delivery${q}`, { headers: api.authHeader() }).then(r => r.json())
       setOrders(r)
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju dostav') }
     try { const r = await fetch('/api/v1/delivery/stats', { headers: api.authHeader() }).then(r => r.json()); setStats(r) } catch {}
     try { const r = await fetch('/api/v1/settings', { headers: api.authHeader() }).then(r => r.json()); setApiKey(r.delivery_api_key || '') } catch {}
   }

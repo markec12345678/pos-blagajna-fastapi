@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface BudgetRow { id: number; month: number; year: number; category: string; amount: number; notes: string }
 interface AvsB { category: string; label: string; budgeted: number | null; actual: number; pct: number | null; diff: number | null; favorable: boolean | null }
@@ -30,9 +31,9 @@ export default function BudgetPage({ onNotify }: BudgetPageProps) {
   const load = () => {
     setLoading(true)
     Promise.all([
-      fetch(`/api/v1/budgets?year=${year}&month=${month}`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
-      fetch(`/api/v1/budgets/actual-vs-budget?year=${year}&month=${month}`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
-      fetch(`/api/v1/budgets/available-months`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
+      fetch(`/api/v1/budgets?year=${year}&month=${month}`, { headers: api.authHeader() }).then(r => r.json()),
+      fetch(`/api/v1/budgets/actual-vs-budget?year=${year}&month=${month}`, { headers: api.authHeader() }).then(r => r.json()),
+      fetch(`/api/v1/budgets/available-months`, { headers: api.authHeader() }).then(r => r.json()),
     ]).then(([b, a, am]) => {
       setBudgets(b)
       setActuals(a.data)
@@ -46,14 +47,14 @@ export default function BudgetPage({ onNotify }: BudgetPageProps) {
     const body = { month, year, category: cat, amount: parseFloat(amt), notes }
     const url = editing ? `/api/v1/budgets/${editing.id}` : '/api/v1/budgets'
     const method = editing ? 'PUT' : 'POST'
-    await fetch(url, { method, headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    await fetch(url, { method, headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     onNotify(editing ? 'Posodobljeno' : 'Dodano')
     setEditing(null); setCat("revenue"); setAmt(""); setNotes("")
     load()
   }
 
   const deleteBudget = async (id: number) => {
-    await fetch(`/api/v1/budgets/${id}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    await fetch(`/api/v1/budgets/${id}`, { method: 'DELETE', headers: api.authHeader() })
     onNotify('Izbrisano')
     load()
   }

@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function SystemHealthPage() {
   const [data, setData] = useState<any>(null)
 
   useEffect(() => {
-    fetch('/api/v1/system/health', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch('/api/v1/system/health', { headers: api.authHeader() })
       .then(r => r.json()).then(setData)
   }, [])
 

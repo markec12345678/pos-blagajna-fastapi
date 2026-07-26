@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.order import Order, OrderItem
+from app.schemas.kds import ItemStatusUpdate
 from app.models.menu_item import MenuItem
 from app.models.menu_course import MenuCourse
 from app.models.table_model import TableModel
@@ -18,14 +19,24 @@ def get_kds_orders(branch_id: int = 0, db: Session = Depends(get_db)):
     if branch_id:
         q = q.filter(Order.branch_id == branch_id)
     orders = q.all()
-    result = []
+
+    all_item_ids = {i.menu_item_id for o in orders for i in o.items if i.menu_item_id}
+    menu_items = db.query(MenuItem).filter(MenuItem.id.in_(all_item_ids)).all() if all_item_ids else []
+    menu_map = {mi.id: mi for mi in menu_items}
+
+    all_table_ids = {o.table_id for o in orders if o.table_id}
+    tables = db.query(TableModel).filter(TableModel.id.in_(all_table_ids)).all() if all_table_ids else []
+    table_map = {t.id: t for t in tables}
+
     courses = {c.id: c.name for c in db.query(MenuCourse).all()}
+
+    result = []
     for o in orders:
-        table = db.query(TableModel).filter(TableModel.id == o.table_id).first()
+        table = table_map.get(o.table_id)
         items = []
         for i in o.items:
             elapsed = (datetime.now() - o.created_at).total_seconds() / 60
-            mi = db.query(MenuItem).filter(MenuItem.id == i.menu_item_id).first()
+            mi = menu_map.get(i.menu_item_id)
             cid = mi.course_id if mi and mi.course_id else 0
             cname = courses.get(cid, "Ostalo")
             prep_time = None
@@ -56,11 +67,11 @@ def get_kds_orders(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("/items/{item_id}/status")
-def update_item_status(item_id: int, data: dict, db: Session = Depends(get_db)):
+def update_item_status(item_id: int, data: ItemStatusUpdate, db: Session = Depends(get_db)):
     item = db.query(OrderItem).filter(OrderItem.id == item_id).first()
     if not item:
         return {"error": "Item not found"}
-    new_status = data.get("status", "preparing")
+    new_status = data.status
     now = datetime.now()
     item.status = new_status
     if new_status == "preparing" and not item.started_at:
@@ -88,6 +99,18 @@ def kds_analytics(days: int = 7, branch_id: int = 0, db: Session = Depends(get_d
     if total_items == 0:
         return {"total_items": 0, "avg_prep_time": 0, "by_item": [], "by_course": [], "by_hour": []}
 
+    all_order_ids = {i.order_id for i in items if i.order_id}
+    orders = db.query(Order).filter(Order.id.in_(all_order_ids)).all() if all_order_ids else []
+    order_map = {o.id: o for o in orders}
+
+    all_menu_ids = {i.menu_item_id for i in items if i.menu_item_id}
+    menu_items = db.query(MenuItem).filter(MenuItem.id.in_(all_menu_ids)).all() if all_menu_ids else []
+    menu_map = {mi.id: mi for mi in menu_items}
+
+    all_course_ids = {mi.course_id for mi in menu_items if mi.course_id}
+    courses = db.query(MenuCourse).filter(MenuCourse.id.in_(all_course_ids)).all() if all_course_ids else []
+    course_map = {c.id: c.name for c in courses}
+
     by_item: dict = {}
     by_course: dict = {}
     by_hour: dict = {}
@@ -96,9 +119,8 @@ def kds_analytics(days: int = 7, branch_id: int = 0, db: Session = Depends(get_d
     for i in items:
         prep = (i.completed_at - i.started_at).total_seconds() / 60
         total_prep += prep
-        o = db.query(Order).filter(Order.id == i.order_id).first() if i.order_id else None
 
-        mi = db.query(MenuItem).filter(MenuItem.id == i.menu_item_id).first()
+        mi = menu_map.get(i.menu_item_id)
         iname = mi.name if mi else i.item_name
 
         if iname not in by_item:
@@ -108,8 +130,7 @@ def kds_analytics(days: int = 7, branch_id: int = 0, db: Session = Depends(get_d
 
         cid = "Ostalo"
         if mi and mi.course_id:
-            c = db.query(MenuCourse).filter(MenuCourse.id == mi.course_id).first()
-            cid = c.name if c else "Ostalo"
+            cid = course_map.get(mi.course_id, "Ostalo")
         if cid not in by_course:
             by_course[cid] = {"name": cid, "count": 0, "total_prep": 0}
         by_course[cid]["count"] += 1

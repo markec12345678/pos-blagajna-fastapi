@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.menu_course import MenuCourse
+from app.schemas.course import CourseCreate, CourseUpdate
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -13,10 +14,10 @@ def list_courses(db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_course(data: dict, db: Session = Depends(get_db)):
+def create_course(data: CourseCreate, db: Session = Depends(get_db)):
     max_order = db.query(MenuCourse.sort_order).order_by(MenuCourse.sort_order.desc()).first()
     c = MenuCourse(
-        name=data["name"],
+        name=data.name,
         sort_order=(max_order[0] + 1 if max_order else 0)
     )
     db.add(c)
@@ -26,14 +27,14 @@ def create_course(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/{course_id}")
-def update_course(course_id: int, data: dict, db: Session = Depends(get_db)):
+def update_course(course_id: int, data: CourseUpdate, db: Session = Depends(get_db)):
     c = db.query(MenuCourse).filter(MenuCourse.id == course_id).first()
     if not c:
         raise HTTPException(404, "Course not found")
-    if "name" in data:
-        c.name = data["name"]
-    if "sort_order" in data:
-        c.sort_order = data["sort_order"]
+    if data.name is not None:
+        c.name = data.name
+    if data.sort_order is not None:
+        c.sort_order = data.sort_order
     db.commit()
     return {"ok": True}
 

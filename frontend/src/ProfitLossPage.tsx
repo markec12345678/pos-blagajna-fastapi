@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface PLSummary {
   revenue: number; cogs: number; gross_profit: number; gross_margin_pct: number;
@@ -54,7 +55,7 @@ export default function ProfitLossPage({ onNotify }: { onNotify: (msg: string) =
     const dt = range === 'custom' ? (dateTo || new Date().toISOString().slice(0, 10)) : t
     setLoading(true)
     fetch(`/api/v1/analytics/profit-loss?date_from=${df}&date_to=${dt}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     }).then(r => r.json()).then(d => {
       setData(d); setLoading(false)
     }).catch(() => { setLoading(false); onNotify('Napaka pri nalaganju P&L') })

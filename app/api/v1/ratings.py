@@ -2,22 +2,23 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.rating import Rating
+from app.schemas.rating import RatingSubmit
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
 
 
 @router.post("/public")
-def submit_rating(data: dict, db: Session = Depends(get_db)):
+def submit_rating(data: RatingSubmit, db: Session = Depends(get_db)):
     r = Rating(
-        order_id=data.get("order_id"),
-        branch_id=data.get("branch_id"),
-        customer_name=data.get("customer_name", ""),
-        score=data["score"],
-        food_quality=data.get("food_quality"),
-        service_quality=data.get("service_quality"),
-        ambiance=data.get("ambiance"),
-        comment=data.get("comment", "").strip() or None,
+        order_id=data.order_id,
+        branch_id=data.branch_id,
+        customer_name=data.customer_name,
+        score=data.score,
+        food_quality=data.food_quality,
+        service_quality=data.service_quality,
+        ambiance=data.ambiance,
+        comment=data.comment.strip() if data.comment else None,
     )
     db.add(r)
     db.commit()

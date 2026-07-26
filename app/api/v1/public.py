@@ -12,8 +12,13 @@ from app.models.loyalty import LoyaltyTransaction
 from app.models.branch import Branch
 from app.models.settings import Setting
 from app.models.service_request import ServiceRequest
+from app.schemas.public import (
+    CreatePublicOrder, CreateKioskOrder, CreateOnlineOrder,
+    CustomerRegister, CustomerLogin, CustomerUpdateProfile,
+    TablePay, PublicReservation, TableServiceRequest,
+)
 from datetime import datetime
-import json, hashlib, uuid
+import json, uuid
 from app.api.v1.audit_log import log_action
 
 router = APIRouter(prefix="/public", tags=["public"])
@@ -51,38 +56,33 @@ def get_public_menu(table_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/orders")
-def create_public_order(data: dict, db: Session = Depends(get_db)):
-    table_id = data.get("table_id")
-    customer_name = data.get("customer_name", "Guest")
-    items_data = data.get("items", [])
-
-    table = db.query(TableModel).filter(TableModel.id == table_id).first()
+def create_public_order(data: CreatePublicOrder, db: Session = Depends(get_db)):
+    table = db.query(TableModel).filter(TableModel.id == data.table_id).first()
     if not table:
         raise HTTPException(404, "Table not found")
 
     total = 0
     items = []
-    for item_data in items_data:
-        menu_item = db.query(MenuItem).filter(MenuItem.id == item_data["menu_item_id"]).first()
+    for item_data in data.items:
+        menu_item = db.query(MenuItem).filter(MenuItem.id == item_data.menu_item_id).first()
         if not menu_item:
-            raise HTTPException(404, f"Item {item_data['menu_item_id']} not found")
-        line_total = menu_item.price * item_data["quantity"]
-        notes = item_data.get("notes", "")
+            raise HTTPException(404, f"Item {item_data.menu_item_id} not found")
+        line_total = menu_item.price * item_data.quantity
         total += line_total
         items.append(OrderItem(
             menu_item_id=menu_item.id,
             item_name=menu_item.name,
-            quantity=item_data["quantity"],
+            quantity=item_data.quantity,
             unit_price=menu_item.price,
             total_price=line_total,
-            notes=notes
+            notes=item_data.notes
         ))
 
     order = Order(
-        table_id=table_id,
+        table_id=data.table_id,
         order_type="dine-in",
         cashier_id=0,
-        customer_name=customer_name,
+        customer_name=data.customer_name,
         status="open",
         total=total,
         branch_id=table.branch_id,
@@ -115,27 +115,24 @@ def get_kiosk_menu(branch_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/kiosk-orders")
-def create_kiosk_order(data: dict, db: Session = Depends(get_db)):
-    branch_id = data.get("branch_id", 1)
-    items_data = data.get("items", [])
+def create_kiosk_order(data: CreateKioskOrder, db: Session = Depends(get_db)):
     total = 0
     items = []
-    for item_data in items_data:
-        menu_item = db.query(MenuItem).filter(MenuItem.id == item_data["menu_item_id"]).first()
+    for item_data in data.items:
+        menu_item = db.query(MenuItem).filter(MenuItem.id == item_data.menu_item_id).first()
         if not menu_item:
-            raise HTTPException(404, f"Item {item_data['menu_item_id']} not found")
-        line_total = menu_item.price * item_data["quantity"]
-        notes = item_data.get("notes", "")
+            raise HTTPException(404, f"Item {item_data.menu_item_id} not found")
+        line_total = menu_item.price * item_data.quantity
         total += line_total
         items.append(OrderItem(
             menu_item_id=menu_item.id, item_name=menu_item.name,
-            quantity=item_data["quantity"], unit_price=menu_item.price,
-            total_price=line_total, notes=notes
+            quantity=item_data.quantity, unit_price=menu_item.price,
+            total_price=line_total, notes=item_data.notes
         ))
     order = Order(
         table_id=0, order_type="takeaway", cashier_id=0,
-        customer_name=data.get("customer_name", ""),
-        status="open", total=total, branch_id=branch_id, items=items
+        customer_name=data.customer_name,
+        status="open", total=total, branch_id=data.branch_id, items=items
     )
     db.add(order)
     db.commit()
@@ -236,28 +233,18 @@ def get_online_menu(branch_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/online-orders")
-def create_online_order(data: dict, db: Session = Depends(get_db)):
-    branch_id = data.get("branch_id", 1)
-    customer_name = data.get("customer_name", "Guest")
-    customer_phone = data.get("customer_phone", "")
-    customer_email = data.get("customer_email", "")
-    order_type = data.get("order_type", "takeaway")
-    delivery_address = data.get("delivery_address", "")
-    delivery_notes = data.get("delivery_notes", "")
-    token = data.get("token", "")
-    items_data = data.get("items", [])
-
-    branch = db.query(Branch).filter(Branch.id == branch_id).first()
+def create_online_order(data: CreateOnlineOrder, db: Session = Depends(get_db)):
+    branch = db.query(Branch).filter(Branch.id == data.branch_id).first()
     if not branch:
         raise HTTPException(404, "Branch not found")
 
     total = 0
     items = []
-    for item_data in items_data:
-        menu_item = db.query(MenuItem).filter(MenuItem.id == item_data["menu_item_id"]).first()
+    for item_data in data.items:
+        menu_item = db.query(MenuItem).filter(MenuItem.id == item_data.menu_item_id).first()
         if not menu_item:
-            raise HTTPException(404, f"Item {item_data['menu_item_id']} not found")
-        modifier_option_ids = item_data.get("modifier_option_ids", [])
+            raise HTTPException(404, f"Item {item_data.menu_item_id} not found")
+        modifier_option_ids = item_data.modifier_option_ids
         mod_impact = 0
         mod_details = []
         if modifier_option_ids:
@@ -270,21 +257,19 @@ def create_online_order(data: dict, db: Session = Depends(get_db)):
                     "group_id": opt.group_id
                 })
         unit_price = menu_item.price + mod_impact
-        line_total = unit_price * item_data["quantity"]
+        line_total = unit_price * item_data.quantity
         total += line_total
-        notes = item_data.get("notes", "")
         items.append(OrderItem(
             menu_item_id=menu_item.id,
             item_name=menu_item.name,
-            quantity=item_data["quantity"],
+            quantity=item_data.quantity,
             unit_price=unit_price,
             total_price=line_total,
-            notes=notes,
+            notes=item_data.notes,
             modifiers=json.dumps(mod_details)
         ))
 
-    # Add delivery fee if applicable
-    if order_type == "delivery":
+    if data.order_type == "delivery":
         dfee_setting = db.query(Setting).filter(Setting.key == "delivery_fee").first()
         dfee = float(dfee_setting.value) if dfee_setting and dfee_setting.value else 0
         if dfee > 0:
@@ -296,28 +281,27 @@ def create_online_order(data: dict, db: Session = Depends(get_db)):
             total += dfee
 
     notes_parts = []
-    if delivery_notes:
-        notes_parts.append(delivery_notes)
+    if data.delivery_notes:
+        notes_parts.append(data.delivery_notes)
     notes = " | ".join(notes_parts)
 
     order = Order(
         table_id=0,
-        order_type=order_type,
+        order_type=data.order_type,
         cashier_id=0,
-        customer_name=customer_name,
-        customer_phone=customer_phone,
-        customer_email=customer_email,
-        delivery_address=delivery_address if order_type == "delivery" else "",
+        customer_name=data.customer_name,
+        customer_phone=data.customer_phone,
+        customer_email=data.customer_email,
+        delivery_address=data.delivery_address if data.order_type == "delivery" else "",
         status="open",
         total=total,
-        branch_id=branch_id,
+        branch_id=data.branch_id,
         notes=notes,
         items=items
     )
-    # Link customer if token provided
-    if token:
+    if data.token:
         try:
-            cust = _get_customer_by_token(token, db)
+            cust = _get_customer_by_token(data.token, db)
             order.customer_id = cust.id
             cust.total_spent = (cust.total_spent or 0) + total
             pts = int(total)
@@ -378,27 +362,27 @@ def _get_customer_by_token(token: str, db: Session) -> Customer:
 
 
 def _hash_pw(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    import bcrypt
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 @router.post("/auth/register")
-def customer_register(data: dict, db: Session = Depends(get_db)):
-    name = data.get("name", "").strip()
-    phone = data.get("phone", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    if not name or not password:
-        raise HTTPException(400, "Name and password are required")
+def customer_register(data: CustomerRegister, db: Session = Depends(get_db)):
+    name = data.name.strip()
+    phone = data.phone.strip()
+    email = data.email.strip()
+    if not name:
+        raise HTTPException(400, "Name is required")
     existing = db.query(Customer).filter(Customer.phone == phone).first() if phone else None
     if existing:
         raise HTTPException(400, "Phone already registered")
     token = uuid.uuid4().hex
     c = Customer(
         name=name, phone=phone, email=email,
-        password_hash=_hash_pw(password),
+        password_hash=_hash_pw(data.password),
         auth_token=token,
         is_member=True,
-        loyalty_points=50  # welcome bonus
+        loyalty_points=50
     )
     db.add(c)
     db.commit()
@@ -411,15 +395,14 @@ def customer_register(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/login")
-def customer_login(data: dict, db: Session = Depends(get_db)):
-    phone = data.get("phone", "").strip()
-    password = data.get("password", "")
-    if not phone or not password:
-        raise HTTPException(400, "Phone and password required")
+def customer_login(data: CustomerLogin, db: Session = Depends(get_db)):
+    phone = data.phone.strip()
+    if not phone:
+        raise HTTPException(400, "Phone is required")
     c = db.query(Customer).filter(Customer.phone == phone).first()
-    if not c or c.password_hash != _hash_pw(password):
+    import bcrypt
+    if not c or not bcrypt.checkpw(data.password.encode(), c.password_hash.encode()):
         raise HTTPException(401, "Invalid credentials")
-    # Refresh token on login
     c.auth_token = uuid.uuid4().hex
     db.commit()
     return {
@@ -444,11 +427,11 @@ def customer_profile(token: str = "", db: Session = Depends(get_db)):
 
 
 @router.put("/profile")
-def customer_update_profile(data: dict, token: str = "", db: Session = Depends(get_db)):
+def customer_update_profile(data: CustomerUpdateProfile, token: str = "", db: Session = Depends(get_db)):
     c = _get_customer_by_token(token, db)
-    for k in ("name", "phone", "email", "address", "notes"):
-        if k in data:
-            setattr(c, k, data[k])
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(c, k, v)
     db.commit()
     return {"ok": True}
 
@@ -512,7 +495,7 @@ def get_table_bill(table_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/table-pay/{table_id}")
-def pay_table_bill(table_id: int, data: dict, db: Session = Depends(get_db)):
+def pay_table_bill(table_id: int, data: TablePay, db: Session = Depends(get_db)):
     table = db.query(TableModel).filter(TableModel.id == table_id).first()
     if not table:
         raise HTTPException(404, "Table not found")
@@ -522,11 +505,8 @@ def pay_table_bill(table_id: int, data: dict, db: Session = Depends(get_db)):
     if not order:
         raise HTTPException(400, "No open order on this table")
 
-    tip = float(data.get("tip", 0))
-    method = data.get("method", "card")
-
     payment = Payment(
-        order_id=order.id, amount=order.total, method=method, tip=tip
+        order_id=order.id, amount=order.total, method=data.method, tip=data.tip
     )
     db.add(payment)
 
@@ -547,7 +527,7 @@ def pay_table_bill(table_id: int, data: dict, db: Session = Depends(get_db)):
                 )
                 db.add(tx)
 
-    log_action(db, "table_pay", "payment", payment.id, details=f"Table #{table.name} paid {order.total} via {method}")
+    log_action(db, "table_pay", "payment", payment.id, details=f"Table #{table.name} paid {order.total} via {data.method}")
     db.commit()
 
     try:
@@ -556,7 +536,7 @@ def pay_table_bill(table_id: int, data: dict, db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    return {"ok": True, "order_id": order.id, "total": order.total, "method": method}
+    return {"ok": True, "order_id": order.id, "total": order.total, "method": data.method}
 
 
 from app.models.reservation import Reservation
@@ -565,7 +545,7 @@ from app.models.reservation import Reservation
 def available_slots(date_str: str, guests: int = 2, branch_id: int = 0, db: Session = Depends(get_db)):
     try:
         d = datetime.strptime(date_str, "%Y-%m-%d")
-    except:
+    except (ValueError, TypeError):
         raise HTTPException(400, "Invalid date format (use YYYY-MM-DD)")
 
     open_h = 10
@@ -609,24 +589,20 @@ def available_slots(date_str: str, guests: int = 2, branch_id: int = 0, db: Sess
 
 
 @router.post("/reservations")
-def create_public_reservation(data: dict, db: Session = Depends(get_db)):
-    name = data.get("customer_name", "")
-    phone = data.get("customer_phone", "")
-    email = data.get("customer_email", "")
-    guests = int(data.get("guests", 2))
-    time_str = data.get("reservation_time", "")
-    notes = data.get("notes", "")
-    branch_id = data.get("branch_id", 0)
+def create_public_reservation(data: PublicReservation, db: Session = Depends(get_db)):
+    name = data.customer_name.strip()
+    time_str = data.reservation_time.strip()
 
     if not name or not time_str:
         raise HTTPException(400, "Ime in čas rezervacije sta obvezna")
 
     try:
         rtime = datetime.fromisoformat(time_str)
-    except:
+    except (ValueError, TypeError):
         raise HTTPException(400, "Napačen format datuma")
 
-    tq = db.query(TableModel).filter(TableModel.capacity >= guests, TableModel.status == "free")
+    branch_id = data.branch_id
+    tq = db.query(TableModel).filter(TableModel.capacity >= data.guests, TableModel.status == "free")
     if branch_id:
         tq = tq.filter(TableModel.branch_id == branch_id)
     table = tq.first()
@@ -634,30 +610,30 @@ def create_public_reservation(data: dict, db: Session = Depends(get_db)):
     r = Reservation(
         table_id=table.id if table else None,
         customer_name=name,
-        customer_phone=phone,
-        customer_email=email,
-        guests=guests,
+        customer_phone=data.customer_phone,
+        customer_email=data.customer_email,
+        guests=data.guests,
         reservation_time=rtime,
         status="confirmed",
-        notes=notes,
+        notes=data.notes,
         branch_id=branch_id or None
     )
     db.add(r)
     db.flush()
-    log_action(db, "public_reservation", "reservation", r.id, details=f"{name} ({guests} oseb)")
+    log_action(db, "public_reservation", "reservation", r.id, details=f"{name} ({data.guests} oseb)")
     db.commit()
     db.refresh(r)
     return {"id": r.id, "status": r.status, "table_assigned": table.id if table else None}
 
 
 @router.post("/table-service/{table_id}")
-def table_service_request(table_id: int, data: dict, db: Session = Depends(get_db)):
+def table_service_request(table_id: int, data: TableServiceRequest, db: Session = Depends(get_db)):
     table = db.query(TableModel).filter(TableModel.id == table_id).first()
     sr = ServiceRequest(
         table_id=table_id,
         table_name=table.name if table else f"Miza {table_id}",
-        request_type=data.get("type", "waiter"),
-        message=data.get("message", ""),
+        request_type=data.type,
+        message=data.message,
         status="pending"
     )
     db.add(sr)

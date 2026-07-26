@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authHeader } from './api'
 
 interface FoodCostItem {
   id: number; name: string; category: string; price: number;
@@ -31,7 +32,7 @@ export default function FoodCostPage({ onNotify }: { onNotify: (msg: string) => 
   const [search, setSearch] = useState('')
 
   const api = () => fetch('/api/v1/analytics/food-costs', {
-    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    headers: authHeader()
   })
 
   const load = () => {

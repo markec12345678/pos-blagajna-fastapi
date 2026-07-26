@@ -4,6 +4,7 @@ from sqlalchemy import func as sa_func
 from app.core.database import get_db
 from app.models.catering import CateringOrder
 from app.api.v1.audit_log import log_action
+from app.schemas.catering import CreateCatering, UpdateCatering
 from datetime import datetime
 
 router = APIRouter(prefix="/catering", tags=["catering"])
@@ -36,46 +37,47 @@ def list_catering(status: str = "", branch_id: int = 0, db: Session = Depends(ge
 
 
 @router.post("")
-def create_catering(data: dict, db: Session = Depends(get_db)):
+def create_catering(data: CreateCatering, db: Session = Depends(get_db)):
     r = CateringOrder(
-        customer_name=data["customer_name"],
-        customer_phone=data.get("customer_phone", ""),
-        customer_email=data.get("customer_email", ""),
-        event_type=data.get("event_type", ""),
-        event_date=datetime.fromisoformat(data["event_date"]),
-        event_time=data.get("event_time", ""),
-        guests=data.get("guests", 10),
-        location=data.get("location", ""),
-        menu_details=data.get("menu_details", ""),
-        total=data.get("total", 0),
-        deposit=data.get("deposit", 0),
-        deposit_paid=data.get("deposit_paid", 0),
-        status=data.get("status", "inquiry"),
-        notes=data.get("notes", ""),
-        branch_id=data.get("branch_id"),
-        created_by=data.get("created_by"),
+        customer_name=data.customer_name,
+        customer_phone=data.customer_phone,
+        customer_email=data.customer_email,
+        event_type=data.event_type,
+        event_date=datetime.fromisoformat(data.event_date),
+        event_time=data.event_time,
+        guests=data.guests,
+        location=data.location,
+        menu_details=data.menu_details,
+        total=data.total,
+        deposit=data.deposit,
+        deposit_paid=data.deposit_paid,
+        status=data.status,
+        notes=data.notes,
+        branch_id=data.branch_id,
+        created_by=data.created_by,
     )
     db.add(r)
     db.commit()
     db.refresh(r)
-    log_action("catering", r.id, "create", f"Ustvarjeno catering naročilo za {r.customer_name}", db)
+    log_action(db, "create", "catering", r.id, details=f"Ustvarjeno catering naročilo za {r.customer_name}")
     return {"id": r.id, "status": r.status}
 
 
 @router.put("/{catering_id}")
-def update_catering(catering_id: int, data: dict, db: Session = Depends(get_db)):
+def update_catering(catering_id: int, data: UpdateCatering, db: Session = Depends(get_db)):
     r = db.query(CateringOrder).filter(CateringOrder.id == catering_id).first()
     if not r:
         raise HTTPException(404, "Catering order not found")
+    update_data = data.model_dump(exclude_unset=True)
     for field in ["customer_name", "customer_phone", "customer_email", "event_type",
                   "event_time", "guests", "location", "menu_details",
                   "total", "deposit", "deposit_paid", "status", "notes", "branch_id"]:
-        if field in data:
-            setattr(r, field, data[field])
-    if "event_date" in data:
-        r.event_date = datetime.fromisoformat(data["event_date"])
+        if field in update_data:
+            setattr(r, field, update_data[field])
+    if "event_date" in update_data:
+        r.event_date = datetime.fromisoformat(update_data["event_date"])
     db.commit()
-    log_action("catering", r.id, "update", f"Posodobljeno catering naročilo {r.customer_name}", db)
+    log_action(db, "update", "catering", r.id, details=f"Posodobljeno catering naročilo {r.customer_name}")
     return {"id": r.id, "status": r.status}
 
 
@@ -86,7 +88,7 @@ def delete_catering(catering_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Catering order not found")
     db.delete(r)
     db.commit()
-    log_action("catering", catering_id, "delete", "Izbrisano catering naročilo", db)
+    log_action(db, "delete", "catering", catering_id, details="Izbrisano catering naročilo")
     return {"ok": True}
 
 

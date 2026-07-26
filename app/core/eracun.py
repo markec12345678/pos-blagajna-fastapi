@@ -1,6 +1,10 @@
 from datetime import datetime
 from typing import Optional
 import xml.etree.ElementTree as ET
+import hashlib
+import uuid as _uuid
+import base64
+import json
 
 
 def _fmt(val: float) -> str:
@@ -23,6 +27,8 @@ def generate_eracun_xml(
     discount_amount: float,
     total: float,
     currency: str = "EUR",
+    invoice_type_code: str = "380",
+    credit_note_ref: str = "",
 ) -> str:
     # Build XML manually (UBL 2.1 / eSLOG 2.0 simplified)
     inv = ET.Element("Invoice", xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2")
@@ -42,8 +48,13 @@ def generate_eracun_xml(
     add_text(inv, "IssueTime", issued_at.strftime("%H:%M:%S"))
     if due_at:
         add_text(inv, "DueDate", due_at.strftime("%Y-%m-%d"))
-    add_text(inv, "InvoiceTypeCode", "380")
+    add_text(inv, "InvoiceTypeCode", invoice_type_code)
     add_text(inv, "DocumentCurrencyCode", currency)
+
+    if credit_note_ref:
+        billing_ref = ET.SubElement(inv, f"{{{cac}}}BillingReference")
+        inv_doc_ref = ET.SubElement(billing_ref, f"{{{cac}}}InvoiceDocumentReference")
+        add_text(inv_doc_ref, "ID", credit_note_ref, cbc)
 
     # AccountingSupplierParty (seller)
     acc_supp = ET.SubElement(inv, f"{{{cac}}}AccountingSupplierParty")
@@ -101,7 +112,70 @@ def generate_eracun_xml(
         add_text(il_tax, "Percent", _fmt(item.get("tax_rate", 0)), cbc)
         add_text(il_tax, "TaxAmount", _fmt(item.get("tax_amount", 0)), cbc)
 
-    ET.SubElement(inv, f"{{{cbc}}}Note").text = f"Elektronski račun – POS Blagajna"
+    ET.SubElement(inv, f"{{{cbc}}}Note").text = f"Elektronski racun - POS Blagajna"
 
     xml_str = ET.tostring(inv, encoding="unicode", xml_declaration=True)
     return xml_str
+
+
+def calculate_eracun_hash(xml_content: str) -> str:
+    """SHA-256 hash of e-invoice XML for FURS signing."""
+    return hashlib.sha256(xml_content.encode("utf-8")).hexdigest()
+
+
+def generate_furs_payload(xml: str, private_key_id: str = "") -> dict:
+    """Generate FURS submission payload."""
+    return {
+        "einvoice": base64.b64encode(xml.encode("utf-8")).decode("utf-8"),
+        "invoiceHash": calculate_eracun_hash(xml),
+        "privateKeyId": private_key_id,
+        "uuid": str(_uuid.uuid4()),
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+def validate_eracun_xml(xml: str) -> dict:
+    """Validate e-invoice XML structure for FURS compliance."""
+    errors = []
+    required_elements = [
+        "InvoiceHeader", "AccountingSupplierParty", "AccountingCustomerParty",
+        "TaxTotal", "LegalMonetaryTotal", "InvoiceLine",
+    ]
+    for el in required_elements:
+        if f"}}{el}" not in xml and el + ">" not in xml:
+            errors.append(f"Manjka obvezen element: {el}")
+
+    if "CustomizationID" not in xml:
+        errors.append("Manjka CustomizationID (eSLOG 2.0)")
+    if "InvoiceTypeCode" not in xml:
+        errors.append("Manjka InvoiceTypeCode")
+
+    return {"valid": len(errors) == 0, "errors": errors}
+
+
+def parse_eracun_xml(xml: str) -> dict:
+    """Parse e-invoice XML back to a dictionary for display."""
+    try:
+        root = ET.fromstring(xml)  # nosec B320 - trusted FURS XML
+        ns = {
+            "cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+            "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+        }
+        return {
+            "invoice_number": _find_text(root, ".//cbc:ID", ns),
+            "issue_date": _find_text(root, ".//cbc:IssueDate", ns),
+            "currency": _find_text(root, ".//cbc:DocumentCurrencyCode", ns),
+            "seller_name": _find_text(root, ".//cac:AccountingSupplierParty//cac:PartyName/cbc:Name", ns),
+            "seller_tax_id": _find_text(root, ".//cac:AccountingSupplierParty//cac:PartyTaxScheme/cbc:CompanyID", ns),
+            "buyer_name": _find_text(root, ".//cac:AccountingCustomerParty//cac:PartyName/cbc:Name", ns),
+            "buyer_tax_id": _find_text(root, ".//cac:AccountingCustomerParty//cac:PartyTaxScheme/cbc:CompanyID", ns),
+            "total": _find_text(root, ".//cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount", ns),
+            "valid": True,
+        }
+    except ET.ParseError as e:
+        return {"valid": False, "error": str(e)}
+
+
+def _find_text(root, path, ns):
+    el = root.find(path, ns)
+    return el.text if el is not None else ""

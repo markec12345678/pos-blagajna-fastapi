@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.budget import Budget
+from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.models.order import Order, OrderItem
 from app.models.payment import Payment
 from app.models.shift import EmployeeShift
@@ -19,8 +20,8 @@ BUDGET_CATEGORIES = ["revenue", "cogs", "labor", "expenses", "net_profit"]
 CAT_LABELS = {"revenue": "Prihodki", "cogs": "Stroški živil", "labor": "Stroški dela", "expenses": "Operativni stroški", "net_profit": "Čisti dobiček"}
 
 @router.post("")
-def create_budget(data: dict, db: Session = Depends(get_db)):
-    b = Budget(month=data["month"], year=data["year"], category=data["category"], amount=float(data["amount"]), notes=data.get("notes", ""), created_by=data.get("created_by"))
+def create_budget(data: BudgetCreate, db: Session = Depends(get_db)):
+    b = Budget(month=data.month, year=data.year, category=data.category, amount=float(data.amount), notes=data.notes, created_by=data.created_by)
     db.add(b); db.commit(); db.refresh(b)
     return {"id": b.id, "month": b.month, "year": b.year, "category": b.category, "amount": b.amount}
 
@@ -32,11 +33,12 @@ def list_budgets(year: int = 0, month: int = 0, db: Session = Depends(get_db)):
     return [{"id": b.id, "month": b.month, "year": b.year, "category": b.category, "amount": b.amount, "notes": b.notes, "created_at": str(b.created_at)} for b in q.order_by(Budget.year, Budget.month).all()]
 
 @router.put("/{budget_id}")
-def update_budget(budget_id: int, data: dict, db: Session = Depends(get_db)):
+def update_budget(budget_id: int, data: BudgetUpdate, db: Session = Depends(get_db)):
     b = db.query(Budget).filter(Budget.id == budget_id).first()
     if not b: raise HTTPException(404, "Budget not found")
     for k in ("month", "year", "category", "amount", "notes"):
-        if k in data: setattr(b, k, data[k])
+        v = getattr(data, k)
+        if v is not None: setattr(b, k, v)
     db.commit()
     return {"ok": True}
 

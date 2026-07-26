@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.shift import EmployeeShift
 from app.models.payment import Payment
 from app.models.order import Order
+from app.schemas.tip_pool import CreatePool, PayDistributions
 from datetime import datetime, date
 
 router = APIRouter(prefix="/tips", tags=["tips"])
@@ -55,18 +56,18 @@ def list_pools(
             "status": p.status,
             "distributions_count": len(p.distributions),
             "created_at": str(p.created_at),
-            "distributed_at": str(pool.distributed_at) if pool.distributed_at else None,
+            "distributed_at": str(p.distributed_at) if p.distributed_at else None,
         }
         for p in pools
     ]
 
 
 @router.post("/pools")
-def create_pool(data: dict, db: Session = Depends(get_db)):
-    pool_date_str = data.get("date", str(date.today()))
+def create_pool(data: CreatePool, db: Session = Depends(get_db)):
+    pool_date_str = data.date or str(date.today())
     pool_date = datetime.strptime(pool_date_str, "%Y-%m-%d").date()
-    branch_id = data.get("branch_id")
-    method = data.get("method", "by_hours")
+    branch_id = data.branch_id
+    method = data.method
 
     existing = db.query(TipPool).filter(
         TipPool.date == pool_date,
@@ -180,7 +181,7 @@ def get_pool(pool_id: int, db: Session = Depends(get_db)):
         "status": pool.status,
         "notes": pool.notes,
         "created_at": str(pool.created_at),
-        "distributed_at": str(pool.distributed_at) if p.distributed_at else None,
+        "distributed_at": str(pool.distributed_at) if pool.distributed_at else None,
         "distributions": dists,
     }
 
@@ -199,11 +200,11 @@ def distribute_pool(pool_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/pools/{pool_id}/pay")
-def pay_distributions(pool_id: int, data: dict = {}, db: Session = Depends(get_db)):
+def pay_distributions(pool_id: int, data: PayDistributions = None, db: Session = Depends(get_db)):
     pool = db.query(TipPool).filter(TipPool.id == pool_id).first()
     if not pool:
         raise HTTPException(404, "Pool not found")
-    user_ids = data.get("user_ids")
+    user_ids = data.user_ids if data else None
     q = db.query(TipDistribution).filter(TipDistribution.pool_id == pool_id, TipDistribution.paid == False)
     if user_ids:
         q = q.filter(TipDistribution.user_id.in_(user_ids))

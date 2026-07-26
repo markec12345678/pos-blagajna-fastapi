@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from app.api.v1.auth import get_current_user
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db, engine, Base, SessionLocal
@@ -28,6 +29,7 @@ import json, tempfile, os, shutil, glob, threading, time
 from datetime import datetime, timedelta
 from pathlib import Path
 from app.core.cloud_backup import s3_upload, s3_list, s3_download, s3_delete, gdrive_upload, gdrive_list, gdrive_download, gdrive_delete
+from app.api.v1.audit_log import log_action
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
@@ -62,7 +64,7 @@ def get_setting(key: str, default: str = "") -> str:
         s = db.query(Setting).filter(Setting.key == key).first()
         db.close()
         return s.value if s else default
-    except:
+    except Exception:
         return default
 
 
@@ -92,12 +94,12 @@ def rotate_backups(retain_days: int = 30):
                 filedate = datetime.strptime(parts[-1], "%Y%m%d_%H%M%S")
                 if filedate < cutoff:
                     fname.unlink()
-        except:
+        except (ValueError, OSError):
             pass
 
 
 @router.get("")
-def export_backup(db: Session = Depends(get_db)):
+def export_backup(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     data = {}
     for name, model in MODELS.items():
         rows = db.query(model).all()
@@ -111,7 +113,7 @@ def export_backup(db: Session = Depends(get_db)):
 
 
 @router.post("/auto")
-def create_auto_backup(db: Session = Depends(get_db)):
+def create_auto_backup(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     path = create_backup_file()
     retain = int(get_setting("backup_retention_days", "30"))
     rotate_backups(retain)
@@ -119,7 +121,7 @@ def create_auto_backup(db: Session = Depends(get_db)):
 
 
 @router.get("/list")
-def list_backups(db: Session = Depends(get_db)):
+def list_backups(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     files = []
     for f in sorted(glob.glob(str(BACKUP_DIR / "pos-backup-*.json")), reverse=True):
         fpath = Path(f)
@@ -132,7 +134,7 @@ def list_backups(db: Session = Depends(get_db)):
 
 
 @router.get("/download/{filename}")
-def download_backup(filename: str):
+def download_backup(filename: str, user: User = Depends(get_current_user)):
     fpath = BACKUP_DIR / filename
     if not fpath.exists() or not fpath.is_file():
         return {"error": "File not found"}
@@ -140,7 +142,7 @@ def download_backup(filename: str):
 
 
 @router.post("/restore")
-def import_backup(data: dict, db: Session = Depends(get_db)):
+def import_backup(data: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     for name, model in MODELS.items():
         cols = data.get(name + "_cols", [])
         rows = data.get(name, [])
@@ -166,7 +168,7 @@ def _auto_backup_loop():
                 path = create_backup_file()
                 retain = int(get_setting("backup_retention_days", "30"))
                 rotate_backups(retain)
-        except:
+        except Exception:
             pass
         interval_hours = float(get_setting("backup_interval_hours", "6"))
         time.sleep(interval_hours * 3600)
@@ -197,7 +199,7 @@ def _cloud_settings(db: Session):
 
 
 @router.get("/cloud/settings")
-def get_cloud_settings(db: Session = Depends(get_db)):
+def get_cloud_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     cs = _cloud_settings(db)
     # Mask secrets
     for k in ["s3_secret_key", "gdrive_token"]:
@@ -207,7 +209,7 @@ def get_cloud_settings(db: Session = Depends(get_db)):
 
 
 @router.post("/cloud/settings")
-def save_cloud_settings(data: dict, db: Session = Depends(get_db)):
+def save_cloud_settings(data: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     for key, value in data.items():
         existing = db.query(Setting).filter(Setting.key == key).first()
         if existing:
@@ -219,7 +221,7 @@ def save_cloud_settings(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/cloud/upload")
-def cloud_upload(db: Session = Depends(get_db)):
+def cloud_upload(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     cs = _cloud_settings(db)
     local = create_backup_file()
     provider = cs["cloud_provider"]
@@ -241,7 +243,7 @@ def cloud_upload(db: Session = Depends(get_db)):
 
 
 @router.get("/cloud/list")
-def cloud_list(db: Session = Depends(get_db)):
+def cloud_list(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     cs = _cloud_settings(db)
     provider = cs["cloud_provider"]
     files = []
@@ -259,7 +261,7 @@ def cloud_list(db: Session = Depends(get_db)):
 
 
 @router.post("/cloud/download/{key:path}")
-def cloud_download(key: str, db: Session = Depends(get_db)):
+def cloud_download(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     cs = _cloud_settings(db)
     provider = cs["cloud_provider"]
     local = BACKUP_DIR / os.path.basename(key)
@@ -280,7 +282,7 @@ def cloud_download(key: str, db: Session = Depends(get_db)):
 
 
 @router.post("/cloud/delete/{key:path}")
-def cloud_delete(key: str, db: Session = Depends(get_db)):
+def cloud_delete(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     cs = _cloud_settings(db)
     provider = cs["cloud_provider"]
 

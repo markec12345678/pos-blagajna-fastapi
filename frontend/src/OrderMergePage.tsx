@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function OrderMergePage({ onNotify }: { onNotify: (m: string) => void }) {
   const [orders, setOrders] = useState<any[]>([])
@@ -11,7 +12,7 @@ export default function OrderMergePage({ onNotify }: { onNotify: (m: string) => 
 
   const load = async () => {
     const r = await fetch('/api/v1/orders', {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     })
     const all = await r.json()
     setOrders(all)
@@ -21,7 +22,7 @@ export default function OrderMergePage({ onNotify }: { onNotify: (m: string) => 
 
   const loadSplitItems = async (id: number) => {
     const r = await fetch(`/api/v1/orders/${id}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     })
     const d = await r.json()
     setSplitOrderItems(d.items || [])
@@ -32,7 +33,7 @@ export default function OrderMergePage({ onNotify }: { onNotify: (m: string) => 
     if (!mergeTarget || !mergeSource) return
     const r = await fetch(`/api/v1/orders/${mergeTarget}/merge`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_order_id: parseInt(mergeSource) })
     })
     if (r.ok) {
@@ -48,7 +49,7 @@ export default function OrderMergePage({ onNotify }: { onNotify: (m: string) => 
     if (!splitOrder || splitItems.length === 0) return
     const r = await fetch(`/api/v1/orders/${splitOrder}/split`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_ids: splitItems })
     })
     if (r.ok) {

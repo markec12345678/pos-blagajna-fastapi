@@ -5,24 +5,25 @@ from app.core.database import get_db
 from app.models.waste import WasteRecord
 from app.models.inventory import Ingredient
 from app.api.v1.audit_log import log_action
+from app.schemas.waste import WasteCreate
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/waste", tags=["waste"])
 
 
 @router.post("")
-def create_waste(data: dict, db: Session = Depends(get_db)):
-    ing = db.query(Ingredient).filter(Ingredient.id == data["ingredient_id"]).first()
+def create_waste(data: WasteCreate, db: Session = Depends(get_db)):
+    ing = db.query(Ingredient).filter(Ingredient.id == data.ingredient_id).first()
     if not ing:
         raise HTTPException(404, "Ingredient not found")
-    qty = float(data["quantity"])
+    qty = float(data.quantity)
     if qty <= 0:
         raise HTTPException(400, "Quantity must be positive")
-    cost = data.get("cost", 0) or qty * (ing.cost_per_unit or 0)
+    cost = data.cost or qty * (ing.cost_per_unit or 0)
     wr = WasteRecord(
         ingredient_id=ing.id, quantity=qty, cost=round(cost, 2),
-        reason=data.get("reason", "spoilage"), notes=data.get("notes", ""),
-        user_id=data.get("user_id")
+        reason=data.reason, notes=data.notes,
+        user_id=data.user_id
     )
     db.add(wr)
     ing.stock -= qty
@@ -44,9 +45,11 @@ def list_waste(days: int = 30, ingredient_id: int = 0, reason: str = "", db: Ses
     if reason:
         q = q.filter(WasteRecord.reason == reason)
     records = q.order_by(WasteRecord.created_at.desc()).all()
+    ing_ids = list({r.ingredient_id for r in records})
+    ingredients = {i.id: i for i in db.query(Ingredient).filter(Ingredient.id.in_(ing_ids)).all()} if ing_ids else {}
     result = []
     for r in records:
-        ing = db.query(Ingredient).filter(Ingredient.id == r.ingredient_id).first()
+        ing = ingredients.get(r.ingredient_id)
         result.append({
             "id": r.id, "ingredient_id": r.ingredient_id,
             "ingredient_name": ing.name if ing else "?",
@@ -84,9 +87,11 @@ def waste_analytics(days: int = 30, db: Session = Depends(get_db)):
         by_reason[r.reason]["cost"] += r.cost
         by_reason[r.reason]["qty"] += r.quantity
 
+    ing_ids = list({r.ingredient_id for r in records})
+    ingredients = {i.id: i for i in db.query(Ingredient).filter(Ingredient.id.in_(ing_ids)).all()} if ing_ids else {}
     by_ingredient = {}
     for r in records:
-        ing = db.query(Ingredient).filter(Ingredient.id == r.ingredient_id).first()
+        ing = ingredients.get(r.ingredient_id)
         name = ing.name if ing else "?"
         by_ingredient.setdefault(name, {"count": 0, "cost": 0, "qty": 0, "unit": ing.unit if ing else ""})
         by_ingredient[name]["count"] += 1

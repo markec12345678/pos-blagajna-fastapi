@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react'
 import * as api from './api'
+import { useBulkSelection } from './useBulkSelection'
+import { useListNavigation } from './useListNavigation'
 
 export default function CustomersPage({ onNotify }: { onNotify: (m: string) => void }) {
   const [customers, setCustomers] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [loading, setLoading] = useState(true)
-  const [editModal, setEditModal] = useState<{ id?: number; name: string; phone: string; email: string; address: string; notes: string; tags: string; is_member: boolean } | null>(null)
+  const [editModal, setEditModal] = useState<{ id?: number; name: string; phone: string; email: string; address: string; notes: string; tags: string; is_member: boolean; birthday: string } | null>(null)
   const [viewId, setViewId] = useState<number | null>(null)
   const [history, setHistory] = useState<any>(null)
+  const bulk = useBulkSelection(customers)
+  const listNav = useListNavigation(customers.length, (i) => viewCustomer(customers[i].id))
 
   const load = () => {
     setLoading(true)
@@ -24,6 +28,9 @@ export default function CustomersPage({ onNotify }: { onNotify: (m: string) => v
 
   const save = async () => {
     if (!editModal) return
+    if (!editModal.name.trim()) { onNotify('Ime je obvezno'); return }
+    if (editModal.email && (!editModal.email.includes('@') || !editModal.email.includes('.'))) { onNotify('Email naslov ni veljaven'); return }
+    if (editModal.phone && editModal.phone.replace(/\D/g, '').length < 5) { onNotify('Telefonska številka mora imeti vsaj 5 številk'); return }
     try {
       if (editModal.id) {
         await fetch(`/api/v1/customers/${editModal.id}`, { method: 'PUT', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(editModal) })
@@ -56,11 +63,42 @@ export default function CustomersPage({ onNotify }: { onNotify: (m: string) => v
 
   const allTags = [...new Set(customers.flatMap(c => (c.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean)))]
 
+  const handleBulkDelete = async () => {
+    if (!confirm(`Izbrišem ${bulk.selectedCount} strank?`)) return
+    try {
+      const r = await api.bulkDeleteCustomers([...bulk.selectedIds])
+      onNotify(`Izbrisanih ${r.deleted} strank`)
+      bulk.clear(); load()
+    } catch (e: any) { onNotify(e.message) }
+  }
+
+  const handleBulkTag = async () => {
+    const tag = prompt('Oznaka za dodati:')
+    if (!tag) return
+    try {
+      const r = await api.bulkTagCustomers([...bulk.selectedIds], tag)
+      onNotify(`Označenih ${r.tagged} strank z "${tag}"`)
+      bulk.clear(); load()
+    } catch (e: any) { onNotify(e.message) }
+  }
+
   return (
     <div style={{ padding: 20, maxWidth: 1000, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h2>👥 Stranke</h2>
-        <button onClick={() => setEditModal({ name: '', phone: '', email: '', address: '', notes: '', tags: '', is_member: false })} className="btn btn-primary">+ Dodaj stranko</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {bulk.bulkMode && bulk.selectedCount > 0 && (
+            <>
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>{bulk.selectedCount} izbranih</span>
+              <button onClick={handleBulkTag} className="btn btn-sm" style={{ background: 'var(--blue)', color: '#fff' }}>🏷️ Oznaka</button>
+              <button onClick={handleBulkDelete} className="btn btn-sm" style={{ background: 'var(--red)', color: '#fff' }}>🗑️ Izbriši ({bulk.selectedCount})</button>
+            </>
+          )}
+          <button onClick={bulk.toggleBulkMode} className="btn btn-sm" style={{ background: bulk.bulkMode ? 'var(--amber)' : 'var(--surface2)', border: '1px solid var(--border)' }}>
+            {bulk.bulkMode ? '✕ Prekliči' : '☑️ Paketno'}
+          </button>
+          <button onClick={() => setEditModal({ name: '', phone: '', email: '', address: '', notes: '', tags: '', is_member: false, birthday: '' })} className="btn btn-primary">+ Dodaj stranko</button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -81,10 +119,16 @@ export default function CustomersPage({ onNotify }: { onNotify: (m: string) => v
 
       {loading ? <p>Nalaganje...</p> : customers.length === 0 ? <p style={{ color: '#666' }}>Ni strank.</p> : (
         <div style={{ display: 'grid', gap: 8 }}>
-          {customers.map(c => (
-            <div key={c.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, cursor: 'pointer' }}
-              onClick={() => viewCustomer(c.id)}
+          {customers.map((c, i) => (
+            <div key={c.id} data-list-idx={i} className="card"
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, cursor: 'pointer', border: bulk.bulkMode && bulk.isSelected(c.id) ? '2px solid var(--blue)' : listNav.activeIdx === i ? '2px solid var(--green)' : undefined, background: bulk.bulkMode && bulk.isSelected(c.id) ? 'var(--blue-light, rgba(59,130,246,0.08))' : listNav.activeIdx === i ? 'var(--green-light, rgba(5,150,105,0.06))' : undefined, transition: 'border-color 0.15s, background 0.15s' }}
+              onClick={() => bulk.bulkMode ? bulk.toggle(c.id) : viewCustomer(c.id)}
             >
+              {bulk.bulkMode && (
+                <input type="checkbox" checked={bulk.isSelected(c.id)} onChange={() => bulk.toggle(c.id)}
+                  onClick={e => e.stopPropagation()}
+                  style={{ marginRight: 12, width: 18, height: 18, accentColor: 'var(--blue)' }} aria-label={`Izberi ${c.name}`} />
+              )}
               <div>
                 <strong>{c.name}</strong>
                 <span style={{ color: '#64748b', fontSize: 13, marginLeft: 8 }}>
@@ -112,6 +156,8 @@ export default function CustomersPage({ onNotify }: { onNotify: (m: string) => v
               <input className="input" placeholder="Ime *" value={editModal.name} onChange={e => setEditModal({ ...editModal, name: e.target.value })} />
               <input className="input" placeholder="Telefon" value={editModal.phone} onChange={e => setEditModal({ ...editModal, phone: e.target.value })} />
               <input className="input" placeholder="Email" value={editModal.email} onChange={e => setEditModal({ ...editModal, email: e.target.value })} />
+              <input type="date" className="input" value={editModal.birthday || ''} onChange={e => setEditModal({ ...editModal, birthday: e.target.value })}
+                style={{ color: editModal.birthday ? 'var(--text)' : 'var(--text2)' }} />
               <input className="input" placeholder="Naslov" value={editModal.address} onChange={e => setEditModal({ ...editModal, address: e.target.value })} />
               <input className="input" placeholder="🏷️ Oznake (ločene z vejico)" value={editModal.tags} onChange={e => setEditModal({ ...editModal, tags: e.target.value })} />
               <textarea className="input" placeholder="Opombe" value={editModal.notes} onChange={e => setEditModal({ ...editModal, notes: e.target.value })} style={{ minHeight: 60 }} />

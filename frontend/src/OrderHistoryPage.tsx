@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import * as api from './api'
+import { useBulkSelection } from './useBulkSelection'
+import { useListNavigation } from './useListNavigation'
 
 export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) => void }) {
   const [orders, setOrders] = useState<any[]>([])
@@ -13,6 +15,7 @@ export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) =
   const [refundAmount, setRefundAmount] = useState('')
   const [page, setPage] = useState(0)
   const pageSize = 50
+  const bulk = useBulkSelection(orders)
 
   const load = async () => {
     setLoading(true)
@@ -21,7 +24,7 @@ export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) =
       if (statusFilter) params.set('status', statusFilter)
       const r = await fetch(`/api/v1/orders/history/recent?${params}`, { headers: api.authHeader() })
       setOrders(await r.json())
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju zgodovine') }
     setLoading(false)
   }
 
@@ -32,7 +35,7 @@ export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) =
       const r = await fetch(`/api/v1/orders/${id}`, { headers: api.authHeader() })
       setDetail(await r.json())
       setDetailId(id)
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju podrobnosti') }
   }
 
   const doRefund = async () => {
@@ -62,6 +65,11 @@ export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) =
     (!search || `${o.id}`.includes(search) || (o.customer_name || '').toLowerCase().includes(search.toLowerCase()) || (o.table_name || '').toLowerCase().includes(search.toLowerCase())) &&
     (!typeFilter || o.order_type === typeFilter)
   )
+  const ordersNav = useListNavigation(filtered.length, (idx) => {
+    const o = filtered[idx]
+    if (bulk.bulkMode) { bulk.toggle(o.id); return }
+    viewDetail(o.id)
+  })
 
   const statuses = [
     { key: '', label: 'Vse' },
@@ -88,21 +96,47 @@ export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) =
           <option value="delivery">Dostava</option>
         </select>
         <span style={{ fontSize: 12, color: '#64748b' }}>{filtered.length} naročil</span>
+        <button onClick={bulk.toggleBulkMode} className="btn btn-sm" style={{ background: bulk.bulkMode ? 'var(--amber)' : 'var(--surface2)', border: '1px solid var(--border)' }}>
+          {bulk.bulkMode ? '✕ Prekliči' : '☑️ Paketno'}
+        </button>
+        {bulk.bulkMode && bulk.selectedCount > 0 && (
+          <>
+            <span style={{ fontSize: 13, color: 'var(--text2)' }}>{bulk.selectedCount} izbranih</span>
+            <button onClick={() => {
+              const selected = filtered.filter(o => bulk.isSelected(o.id))
+              const csv = ['ID,Tip,Miza,Skupaj,Status,Datum']
+              selected.forEach(o => csv.push(`${o.id},${o.order_type},${o.table_name || ''},${(o.total || 0).toFixed(2)},${o.status},${o.created_at}`))
+              const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a'); a.href = url; a.download = `narocila_${new Date().toISOString().slice(0,10)}.csv`; a.click()
+              URL.revokeObjectURL(url)
+              onNotify(`Izvoženih ${selected.length} naročil`)
+            }} className="btn btn-sm" style={{ background: 'var(--green)', color: '#fff' }}>📥 CSV ({bulk.selectedCount})</button>
+          </>
+        )}
       </div>
 
       {loading ? <p>Nalaganje...</p> : filtered.length === 0 ? <p style={{ color: '#666' }}>Ni naročil.</p> : (
         <div style={{ display: 'grid', gap: 6 }}>
-          {filtered.map(o => (
-            <div key={o.id} className="card" style={{
+          {filtered.map((o, idx) => (
+            <div key={o.id} className="card" data-list-idx={idx} style={{
               padding: '10px 14px', cursor: 'pointer',
-              borderLeft: `4px solid ${
+              borderLeft: bulk.bulkMode ? undefined : `4px solid ${
                 o.status === 'closed' ? '#059669' :
                 o.status === 'open' ? '#f59e0b' :
                 o.status === 'cancelled' ? '#ef4444' :
                 o.status === 'scheduled' ? '#8b5cf6' : '#64748b'
-              }`
-            }} onClick={() => viewDetail(o.id)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              }`,
+              border: bulk.bulkMode && bulk.isSelected(o.id) ? '2px solid var(--blue)' : undefined,
+              background: bulk.bulkMode && bulk.isSelected(o.id) ? 'var(--blue-light, rgba(59,130,246,0.08))' : undefined
+            }} onClick={() => bulk.bulkMode ? bulk.toggle(o.id) : viewDetail(o.id)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {bulk.bulkMode && (
+                  <input type="checkbox" checked={bulk.isSelected(o.id)} onChange={() => bulk.toggle(o.id)}
+                    onClick={e => e.stopPropagation()}
+                    style={{ width: 18, height: 18, accentColor: 'var(--blue)', flexShrink: 0 }} aria-label={`Izberi naročilo #${o.id}`} />
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
                 <div>
                   <strong>#{o.invoice_number || o.id}</strong>
                   <span style={{ marginLeft: 8, fontSize: 13, color: '#64748b' }}>{o.table_name || `Miza ${o.table_id}`}</span>
@@ -120,6 +154,7 @@ export default function OrderHistoryPage({ onNotify }: { onNotify: (m: string) =
                       : new Date(o.created_at).toLocaleDateString('sl-SI', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
+              </div>
               </div>
             </div>
           ))}

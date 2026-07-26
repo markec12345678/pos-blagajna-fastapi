@@ -3,6 +3,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.modifiers import ModifierGroup, ModifierOption, MenuItemModifierLink
 from app.models.menu_item import MenuItem
+from app.schemas.modifier import (
+    ModifierGroupCreate, ModifierGroupUpdate,
+    ModifierOptionCreate, ModifierOptionUpdate, ModifierLink
+)
 
 router = APIRouter(prefix="/modifiers", tags=["modifiers"])
 
@@ -27,13 +31,13 @@ def list_groups(db: Session = Depends(get_db)):
 
 
 @router.post("/groups")
-def create_group(data: dict, db: Session = Depends(get_db)):
+def create_group(data: ModifierGroupCreate, db: Session = Depends(get_db)):
     max_order = db.query(ModifierGroup.sort_order).order_by(ModifierGroup.sort_order.desc()).first()
     g = ModifierGroup(
-        name=data["name"],
-        min_select=data.get("min_select", 0),
-        max_select=data.get("max_select", 1),
-        is_required=data.get("is_required", False),
+        name=data.name,
+        min_select=data.min_select,
+        max_select=data.max_select,
+        is_required=data.is_required,
         sort_order=(max_order[0] + 1 if max_order else 0)
     )
     db.add(g)
@@ -43,13 +47,13 @@ def create_group(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/groups/{group_id}")
-def update_group(group_id: int, data: dict, db: Session = Depends(get_db)):
+def update_group(group_id: int, data: ModifierGroupUpdate, db: Session = Depends(get_db)):
     g = db.query(ModifierGroup).filter(ModifierGroup.id == group_id).first()
     if not g:
         raise HTTPException(404, "Group not found")
-    for k in ("name", "min_select", "max_select", "is_required", "sort_order"):
-        if k in data:
-            setattr(g, k, data[k])
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(g, k, v)
     db.commit()
     return {"ok": True}
 
@@ -67,17 +71,17 @@ def delete_group(group_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/options")
-def create_option(data: dict, db: Session = Depends(get_db)):
-    group = db.query(ModifierGroup).filter(ModifierGroup.id == data["group_id"]).first()
+def create_option(data: ModifierOptionCreate, db: Session = Depends(get_db)):
+    group = db.query(ModifierGroup).filter(ModifierGroup.id == data.group_id).first()
     if not group:
         raise HTTPException(404, "Group not found")
-    max_order = db.query(ModifierOption.sort_order).filter(ModifierOption.group_id == data["group_id"]).order_by(ModifierOption.sort_order.desc()).first()
+    max_order = db.query(ModifierOption.sort_order).filter(ModifierOption.group_id == data.group_id).order_by(ModifierOption.sort_order.desc()).first()
     o = ModifierOption(
-        group_id=data["group_id"],
-        name=data["name"],
-        price_impact=data.get("price_impact", 0),
-        ingredient_id=data.get("ingredient_id"),
-        ingredient_quantity=data.get("ingredient_quantity", 0),
+        group_id=data.group_id,
+        name=data.name,
+        price_impact=data.price_impact,
+        ingredient_id=data.ingredient_id,
+        ingredient_quantity=data.ingredient_quantity,
         sort_order=(max_order[0] + 1 if max_order else 0)
     )
     db.add(o)
@@ -87,13 +91,13 @@ def create_option(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/options/{option_id}")
-def update_option(option_id: int, data: dict, db: Session = Depends(get_db)):
+def update_option(option_id: int, data: ModifierOptionUpdate, db: Session = Depends(get_db)):
     o = db.query(ModifierOption).filter(ModifierOption.id == option_id).first()
     if not o:
         raise HTTPException(404, "Option not found")
-    for k in ("name", "price_impact", "ingredient_id", "ingredient_quantity", "sort_order"):
-        if k in data:
-            setattr(o, k, data[k])
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(o, k, v)
     db.commit()
     return {"ok": True}
 
@@ -138,24 +142,24 @@ def get_modifiers_for_item(menu_item_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/link")
-def link_modifier(data: dict, db: Session = Depends(get_db)):
+def link_modifier(data: ModifierLink, db: Session = Depends(get_db)):
     existing = db.query(MenuItemModifierLink).filter(
-        MenuItemModifierLink.menu_item_id == data["menu_item_id"],
-        MenuItemModifierLink.group_id == data["group_id"]
+        MenuItemModifierLink.menu_item_id == data.menu_item_id,
+        MenuItemModifierLink.group_id == data.group_id
     ).first()
     if existing:
         raise HTTPException(400, "Already linked")
-    link = MenuItemModifierLink(menu_item_id=data["menu_item_id"], group_id=data["group_id"])
+    link = MenuItemModifierLink(menu_item_id=data.menu_item_id, group_id=data.group_id)
     db.add(link)
     db.commit()
     return {"ok": True}
 
 
 @router.delete("/link")
-def unlink_modifier(data: dict, db: Session = Depends(get_db)):
+def unlink_modifier(data: ModifierLink, db: Session = Depends(get_db)):
     link = db.query(MenuItemModifierLink).filter(
-        MenuItemModifierLink.menu_item_id == data["menu_item_id"],
-        MenuItemModifierLink.group_id == data["group_id"]
+        MenuItemModifierLink.menu_item_id == data.menu_item_id,
+        MenuItemModifierLink.group_id == data.group_id
     ).first()
     if not link:
         raise HTTPException(404, "Link not found")

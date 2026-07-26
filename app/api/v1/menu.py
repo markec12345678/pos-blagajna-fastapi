@@ -4,9 +4,14 @@ from app.core.database import get_db
 from app.models.category import Category
 from app.models.menu_item import MenuItem, ComboItem, MenuVersion, CrossSellItem
 from app.models.inventory import RecipeItem, Ingredient
-from app.schemas.menu import CategoryWithItems, MenuItemOut, MenuItemCreate
+from app.schemas.menu import (
+    CategoryWithItems, MenuItemOut, MenuItemCreate,
+    CategoryCreate, CategoryUpdate, MenuItemUpdate,
+    ComboItemAdd, MenuVersionCreate, BulkAction, CrossSellCreate
+)
 from datetime import datetime
 import json
+from app.core.cache import cached, invalidate
 
 router = APIRouter(prefix="/menu", tags=["menu"])
 
@@ -31,6 +36,7 @@ def get_badge_presets():
     return BADGE_PRESETS
 
 
+@cached(ttl=60, key_prefix="menu")
 @router.get("")
 def get_menu(branch_id: int = 0, db: Session = Depends(get_db)):
     q = db.query(Category).order_by(Category.sort_order)
@@ -50,6 +56,7 @@ def get_menu(branch_id: int = 0, db: Session = Depends(get_db)):
     return result
 
 
+@cached(ttl=60, key_prefix="menu")
 @router.get("/all")
 def get_all_menu(branch_id: int = 0, db: Session = Depends(get_db)):
     q = db.query(Category).order_by(Category.sort_order)
@@ -69,6 +76,7 @@ def get_all_menu(branch_id: int = 0, db: Session = Depends(get_db)):
     return result
 
 
+@cached(ttl=60, key_prefix="menu")
 @router.get("/categories")
 def list_categories(branch_id: int = 0, db: Session = Depends(get_db)):
     q = db.query(Category).order_by(Category.sort_order)
@@ -78,25 +86,27 @@ def list_categories(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("/categories")
-def create_category(data: dict, db: Session = Depends(get_db)):
+def create_category(data: CategoryCreate, db: Session = Depends(get_db)):
     max_order = db.query(Category.sort_order).order_by(Category.sort_order.desc()).first()
-    cat = Category(name=data["name"], sort_order=(max_order[0] + 1 if max_order else 0), branch_id=data.get("branch_id"))
+    cat = Category(name=data.name, sort_order=(max_order[0] + 1 if max_order else 0), branch_id=data.branch_id)
     db.add(cat)
     db.commit()
+    invalidate("menu")
     db.refresh(cat)
     return {"id": cat.id, "name": cat.name, "sort_order": cat.sort_order}
 
 
 @router.put("/categories/{cat_id}")
-def update_category(cat_id: int, data: dict, db: Session = Depends(get_db)):
+def update_category(cat_id: int, data: CategoryUpdate, db: Session = Depends(get_db)):
     cat = db.query(Category).filter(Category.id == cat_id).first()
     if not cat:
         raise HTTPException(404, "Category not found")
-    if "name" in data:
-        cat.name = data["name"]
-    if "sort_order" in data:
-        cat.sort_order = data["sort_order"]
+    if data.name is not None:
+        cat.name = data.name
+    if data.sort_order is not None:
+        cat.sort_order = data.sort_order
     db.commit()
+    invalidate("menu")
     return {"id": cat.id, "name": cat.name, "sort_order": cat.sort_order}
 
 
@@ -110,42 +120,55 @@ def delete_category(cat_id: int, db: Session = Depends(get_db)):
         raise HTTPException(400, f"Kategorija vsebuje {items} artiklov. Najprej jih prestavite ali izbrišite.")
     db.delete(cat)
     db.commit()
+    invalidate("menu")
     return {"ok": True}
 
 
 @router.get("/items")
-def get_items(all: bool = False, branch_id: int = 0, db: Session = Depends(get_db)):
+def get_items(all: bool = False, branch_id: int = 0, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     q = db.query(MenuItem)
     if branch_id:
         q = q.filter(MenuItem.branch_id == branch_id)
     if not all:
         q = q.filter(MenuItem.is_active == True)
-    return [MenuItemOut.model_validate(i) for i in q.all()]
+    total = q.count()
+    items = q.order_by(MenuItem.id.desc()).offset(skip).limit(limit).all()
+    return {"items": [MenuItemOut.model_validate(i) for i in items], "total": total}
 
 @router.post("/items", response_model=MenuItemOut)
 def create_item(item: MenuItemCreate, db: Session = Depends(get_db)):
     db_item = MenuItem(**item.model_dump())
     db.add(db_item)
     db.commit()
+    invalidate("menu")
     db.refresh(db_item)
     return MenuItemOut.model_validate(db_item)
 
 
 @router.put("/items/{item_id}")
-def update_item(item_id: int, data: dict, db: Session = Depends(get_db)):
+def update_item(item_id: int, data: MenuItemUpdate, db: Session = Depends(get_db)):
     item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "Item not found")
-    for k in ("name", "description", "price", "category_id", "is_active", "is_favorite", "course_id", "is_out_of_stock", "is_combo", "branch_id", "image_url", "allergens", "tags", "translations", "tax_rate", "calories", "protein", "fat", "carbs"):
-        if k in data:
-            setattr(item, k, data[k])
-    if "plu_code" in data:
-        item.plu_code = data.get("plu_code")
-    if "combo_price" in data:
-        item.combo_price = data["combo_price"]
-        item.is_combo = data["combo_price"] is not None and data["combo_price"] > 0
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(item, k, v)
+    if data.combo_price is not None:
+        item.is_combo = data.combo_price is not None and data.combo_price > 0
     db.commit()
+    invalidate("menu")
     return {"id": item.id, "name": item.name, "price": item.price, "is_active": item.is_active}
+
+
+@router.post("/items/{item_id}/toggle-oos")
+def toggle_out_of_stock(item_id: int, db: Session = Depends(get_db)):
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "Item not found")
+    item.is_out_of_stock = not item.is_out_of_stock
+    db.commit()
+    invalidate("menu")
+    return {"id": item.id, "name": item.name, "is_out_of_stock": item.is_out_of_stock}
 
 
 @router.get("/items/{item_id}/cost")
@@ -204,6 +227,7 @@ def auto_out_of_stock(branch_id: int = 0, db: Session = Depends(get_db)):
             item.is_out_of_stock = False
             unmarked += 1
     db.commit()
+    invalidate("menu")
     return {"marked_out_of_stock": marked, "marked_available": unmarked}
 
 
@@ -235,6 +259,7 @@ def delete_item(item_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Item not found")
     db.delete(item)
     db.commit()
+    invalidate("menu")
     return {"ok": True}
 
 
@@ -257,16 +282,17 @@ def list_combos(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("/combos/{combo_id}/items")
-def add_combo_item(combo_id: int, data: dict, db: Session = Depends(get_db)):
+def add_combo_item(combo_id: int, data: ComboItemAdd, db: Session = Depends(get_db)):
     combo = db.query(MenuItem).filter(MenuItem.id == combo_id, MenuItem.is_combo == True).first()
     if not combo:
         raise HTTPException(404, "Combo not found")
-    item = db.query(MenuItem).filter(MenuItem.id == data["item_id"]).first()
+    item = db.query(MenuItem).filter(MenuItem.id == data.item_id).first()
     if not item:
         raise HTTPException(404, "Item not found")
-    ci = ComboItem(combo_id=combo_id, item_id=data["item_id"], quantity=data.get("quantity", 1))
+    ci = ComboItem(combo_id=combo_id, item_id=data.item_id, quantity=data.quantity)
     db.add(ci)
     db.commit()
+    invalidate("menu")
     return {"ok": True}
 
 
@@ -277,6 +303,7 @@ def remove_combo_item(combo_id: int, item_id: int, db: Session = Depends(get_db)
         raise HTTPException(404, "Combo item not found")
     db.delete(ci)
     db.commit()
+    invalidate("menu")
     return {"ok": True}
 
 
@@ -295,19 +322,20 @@ def list_versions(item_id: int = None, branch_id: int = 0, db: Session = Depends
 
 
 @router.post("/versions")
-def create_version(data: dict, db: Session = Depends(get_db)):
-    item = db.query(MenuItem).filter(MenuItem.id == data.get("item_id")).first()
+def create_version(data: MenuVersionCreate, db: Session = Depends(get_db)):
+    item = db.query(MenuItem).filter(MenuItem.id == data.item_id).first()
     if not item:
         raise HTTPException(404, "Item not found")
     v = MenuVersion(
-        item_id=data["item_id"],
-        price=float(data["price"]),
-        valid_from=datetime.fromisoformat(data["valid_from"]) if data.get("valid_from") else None,
-        valid_to=datetime.fromisoformat(data["valid_to"]) if data.get("valid_to") else None,
-        branch_id=data.get("branch_id") if data.get("branch_id") else None
+        item_id=data.item_id,
+        price=data.price,
+        valid_from=datetime.fromisoformat(data.valid_from) if data.valid_from else None,
+        valid_to=datetime.fromisoformat(data.valid_to) if data.valid_to else None,
+        branch_id=data.branch_id if data.branch_id else None
     )
     db.add(v)
     db.commit()
+    invalidate("menu")
     db.refresh(v)
     return {"id": v.id, "price": v.price, "valid_from": v.valid_from.isoformat() if v.valid_from else None, "valid_to": v.valid_to.isoformat() if v.valid_to else None}
 
@@ -319,13 +347,14 @@ def delete_version(version_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Version not found")
     db.delete(v)
     db.commit()
+    invalidate("menu")
     return {"ok": True}
 
 
 @router.post("/bulk")
-def bulk_action(payload: dict, db: Session = Depends(get_db)):
-    action = payload.get("action")
-    category_id = payload.get("category_id")
+def bulk_action(payload: BulkAction, db: Session = Depends(get_db)):
+    action = payload.action
+    category_id = payload.category_id
     q = db.query(MenuItem)
     if category_id:
         q = q.filter(MenuItem.category_id == category_id)
@@ -333,7 +362,7 @@ def bulk_action(payload: dict, db: Session = Depends(get_db)):
     updated = 0
     for item in items:
         if action == "price":
-            value = payload.get("value", "")
+            value = payload.value or ""
             if not value:
                 continue
             if value.startswith("+") and value.endswith("%"):
@@ -350,19 +379,20 @@ def bulk_action(payload: dict, db: Session = Depends(get_db)):
                 item.price = round(float(value), 2)
             updated += 1
         elif action == "category":
-            new_cat = payload.get("category_id")
+            new_cat = payload.category_id
             if new_cat:
                 item.category_id = int(new_cat)
                 updated += 1
         elif action == "course":
-            new_course = payload.get("course_id")
+            new_course = payload.course_id
             item.course_id = int(new_course) if new_course else None
             updated += 1
         elif action == "activate":
-            val = payload.get("value", "activate")
+            val = payload.value or "activate"
             item.is_active = val == "activate"
             updated += 1
     db.commit()
+    invalidate("menu")
     return {"updated": updated}
 
 
@@ -387,6 +417,7 @@ def set_item_translations(item_id: int, data: dict, db: Session = Depends(get_db
             existing[lang] = fields
     item.translations = json.dumps(existing)
     db.commit()
+    invalidate("menu")
     return existing
 
 
@@ -406,21 +437,17 @@ def get_cross_sell(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/cross-sell")
-def add_cross_sell(data: dict, db: Session = Depends(get_db)):
-    item_id = data.get("item_id")
-    suggested_id = data.get("suggested_id")
-    cs_type = data.get("type", "cross-sell")
-    if not item_id or not suggested_id:
-        raise HTTPException(400, "item_id and suggested_id required")
+def add_cross_sell(data: CrossSellCreate, db: Session = Depends(get_db)):
     existing = db.query(CrossSellItem).filter(
-        CrossSellItem.item_id == item_id,
-        CrossSellItem.suggested_id == suggested_id
+        CrossSellItem.item_id == data.item_id,
+        CrossSellItem.suggested_id == data.suggested_id
     ).first()
     if existing:
         raise HTTPException(400, "Already exists")
-    cs = CrossSellItem(item_id=item_id, suggested_id=suggested_id, type=cs_type)
+    cs = CrossSellItem(item_id=data.item_id, suggested_id=data.suggested_id, type=data.type)
     db.add(cs)
     db.commit()
+    invalidate("menu")
     db.refresh(cs)
     return {"id": cs.id, "type": cs.type}
 
@@ -432,4 +459,5 @@ def delete_cross_sell(cs_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Not found")
     db.delete(cs)
     db.commit()
+    invalidate("menu")
     return {"ok": True}

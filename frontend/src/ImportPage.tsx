@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import * as api from './api'
 
 const TYPES = [
   { key: 'customers', label: 'Stranke', desc: 'name, phone, email, address, notes, tags, is_member, loyalty_points' },
@@ -47,7 +48,7 @@ export default function ImportPage({ onNotify }: { onNotify: (m: string) => void
     try {
       const r = await fetch(`/api/v1/import/${type}`, {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+        headers: api.authHeader(),
         body: form
       })
       const d = await r.json()

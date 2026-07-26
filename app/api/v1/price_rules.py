@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.price_rule import PriceRule
+from app.schemas.price_rule import PriceRuleCreate, PriceRuleUpdate
 from app.models.menu_item import MenuItem
 from app.core.pricing import get_effective_price
 
@@ -23,24 +24,25 @@ def list_rules(branch_id: int = 0, db: Session = Depends(get_db)):
     } for r in rules]
 
 @router.post("")
-def create_rule(data: dict, db: Session = Depends(get_db)):
+def create_rule(data: PriceRuleCreate, db: Session = Depends(get_db)):
     r = PriceRule(
-        menu_item_id=data.get("menu_item_id"),
-        day_of_week=data.get("day_of_week"),
-        time_from=data.get("time_from"), time_to=data.get("time_to"),
-        price=float(data["price"]), order_type=data.get("order_type"),
-        label=data.get("label", ""), is_active=data.get("is_active", True),
-        branch_id=data.get("branch_id")
+        menu_item_id=data.menu_item_id,
+        day_of_week=data.day_of_week,
+        time_from=data.time_from, time_to=data.time_to,
+        price=float(data.price), order_type=data.order_type,
+        label=data.label, is_active=data.is_active,
+        branch_id=data.branch_id
     )
     db.add(r); db.commit(); db.refresh(r)
     return {"id": r.id, "label": r.label, "price": r.price}
 
 @router.put("/{rule_id}")
-def update_rule(rule_id: int, data: dict, db: Session = Depends(get_db)):
+def update_rule(rule_id: int, data: PriceRuleUpdate, db: Session = Depends(get_db)):
     r = db.query(PriceRule).filter(PriceRule.id == rule_id).first()
     if not r: raise HTTPException(404, "Rule not found")
     for k in ("menu_item_id", "day_of_week", "time_from", "time_to", "price", "order_type", "label", "is_active", "branch_id"):
-        if k in data: setattr(r, k, data[k])
+        v = getattr(data, k)
+        if v is not None: setattr(r, k, v)
     db.commit()
     return {"ok": True}
 

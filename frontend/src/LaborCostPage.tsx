@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authHeader } from './api'
 
 interface LaborEmployee {
   user_id: number; user_name: string; role: string;
@@ -19,7 +20,7 @@ export default function LaborCostPage({ onNotify }: { onNotify: (msg: string) =>
   const [days, setDays] = useState(7)
 
   const api = () => fetch(`/api/v1/analytics/labor-costs?days=${days}`, {
-    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    headers: authHeader()
   })
 
   const load = () => {

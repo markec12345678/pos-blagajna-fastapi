@@ -11,11 +11,14 @@ export default function UsersPage({ onNotify }: { onNotify: (msg: string) => voi
   const add = async () => {
     const username = prompt('Uporabniško ime:')
     if (!username) return
+    if (username.length < 2) { onNotify('Uporabniško ime mora imeti vsaj 2 znaka'); return }
     const password = prompt('Geslo:')
     if (!password) return
+    if (password.length < 4) { onNotify('Geslo mora imeti vsaj 4 znake'); return }
     const name = prompt('Polno ime:', username) || username
     const role = confirm('Admin? (OK=admin, Cancel=cashier)') ? 'admin' : 'cashier'
-    const pin = prompt('PIN koda (4 številke):')
+    const pin = prompt('PIN koda (3-8 številk, prazno = brez PIN-a):')
+    if (pin && !/^\d{3,8}$/.test(pin)) { onNotify('PIN mora imeti 3-8 številk'); return }
     await fetch('/api/v1/users', { method: 'POST', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, full_name: name, role, pin_code: pin || null }) })
     onNotify(`Uporabnik "${username}" dodan`); load()
   }
@@ -23,10 +26,13 @@ export default function UsersPage({ onNotify }: { onNotify: (msg: string) => voi
   const editUser = async (user: any) => {
     const name = prompt('Polno ime:', user.full_name)
     if (!name) return
+    if (name.length < 2) { onNotify('Ime mora imeti vsaj 2 znaka'); return }
     const role = prompt('Vloga (admin/cashier):', user.role)
     if (!role || (role !== 'admin' && role !== 'cashier')) return
     const pw = prompt('Novo geslo (prazno = brez spremembe):')
-    const pin = prompt('PIN koda (4 številke, prazno = brez spremembe):')
+    if (pw && pw.length < 4) { onNotify('Geslo mora imeti vsaj 4 znake'); return }
+    const pin = prompt('PIN koda (3-8 številk, prazno = brez spremembe):')
+    if (pin && !/^\d{3,8}$/.test(pin)) { onNotify('PIN mora imeti 3-8 številk'); return }
     const body: any = { full_name: name, role }
     if (pw) body.password = pw
     if (pin) body.pin_code = pin

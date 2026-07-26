@@ -15,6 +15,8 @@ export default function KioskPage() {
   const [noteText, setNoteText] = useState('')
   const [lang, setLang] = useState('sl')
 
+  const setKioskLang = (l: string) => { setLang(l); localStorage.setItem('pos-lang', l) }
+
   const params = new URLSearchParams(window.location.search)
   const branchId = parseInt(params.get('branch') || '1')
   const API = '/api/v1/public'
@@ -77,7 +79,7 @@ export default function KioskPage() {
         <div className="kiosk-logo">🍽️</div>
         <div className="kiosk-lang">
           {['sl', 'en', 'de', 'it'].map(l => (
-            <button key={l} onClick={() => setLang(l)} className={`kiosk-lang-btn ${lang === l ? 'active' : ''}`}>{l.toUpperCase()}</button>
+            <button key={l} onClick={() => setKioskLang(l)} className={`kiosk-lang-btn ${lang === l ? 'active' : ''}`}>{l.toUpperCase()}</button>
           ))}
         </div>
       </div>
@@ -101,6 +103,7 @@ export default function KioskPage() {
                 <div className="kiosk-item-info">
                   <div className="kiosk-item-name">{getItemName(item, item.name)}</div>
                   {item.description && <div className="kiosk-item-desc">{getItemDesc(item, item.description)}</div>}
+                  {item.allergens && <div className="kiosk-item-allergens" style={{ fontSize: 10, color: '#ef4444', marginTop: 2 }}>⚠️ {item.allergens}</div>}
                 </div>
                 <div className="kiosk-item-price">{item.price.toFixed(2)} €</div>
                 {cart.find(c => c.id === item.id) && (

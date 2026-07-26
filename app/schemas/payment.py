@@ -20,3 +20,14 @@ class PaymentOut(BaseModel):
     tip: float = 0
     reference: Optional[str] = None
     created_at: datetime
+
+
+class TerminalPaymentRequest(BaseModel):
+    order_id: int
+    amount: float
+    method: str = "terminal"
+    tip: float = 0
+
+
+class TerminalTestRequest(BaseModel):
+    amount: float = 1.0

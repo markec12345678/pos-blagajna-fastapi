@@ -9,12 +9,12 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     invoice_number = Column(Integer, unique=True, nullable=True)
-    table_id = Column(Integer, ForeignKey("tables.id"))
+    table_id = Column(Integer, ForeignKey("tables.id"), index=True)
     cashier_id = Column(Integer, ForeignKey("users.id"))
     order_type = Column(String, default="dine-in")
     customer_name = Column(String)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
-    status = Column(String, default="open")
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    status = Column(String, default="open", index=True)
     total = Column(Float, default=0)
     tax_total = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.now)
@@ -38,8 +38,8 @@ class OrderItem(Base):
     __tablename__ = "order_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=False, index=True)
     item_name = Column(String, nullable=False)
     quantity = Column(Integer, nullable=False)
     unit_price = Column(Float, nullable=False)

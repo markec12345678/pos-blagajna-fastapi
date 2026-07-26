@@ -1,11 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from pydantic import BaseModel
+from typing import List
 from app.core.database import get_db
 from app.models.inventory import Ingredient, RecipeItem, StockTransaction, StockCountSession, StockCountItem
 from app.models.order import Order, OrderItem
 from app.models.menu_item import MenuItem
 from app.models.supplier import Supplier
+from app.schemas.inventory import (
+    IngredientCreate, IngredientUpdate, AddStock, RecordWaste,
+    DeductIngredients, RecipeCreate, StockCountSessionCreate, StockCountItemUpdate
+)
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -42,16 +48,16 @@ def list_ingredients(category: str = "", branch_id: int = 0, supplier_id: int = 
 
 
 @router.post("/ingredients")
-def create_ingredient(data: dict, db: Session = Depends(get_db)):
+def create_ingredient(data: IngredientCreate, db: Session = Depends(get_db)):
     ing = Ingredient(
-        name=data["name"],
-        unit=data.get("unit", "kos"),
-        category=data.get("category", "food"),
-        stock=data.get("stock", 0),
-        min_stock=data.get("min_stock", 0),
-        cost_per_unit=data.get("cost_per_unit", 0),
-        supplier_id=data.get("supplier_id"),
-        barcode=data.get("barcode", "")
+        name=data.name,
+        unit=data.unit,
+        category=data.category,
+        stock=data.stock,
+        min_stock=data.min_stock,
+        cost_per_unit=data.cost_per_unit,
+        supplier_id=data.supplier_id,
+        barcode=data.barcode
     )
     db.add(ing)
     db.commit()
@@ -60,40 +66,28 @@ def create_ingredient(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/ingredients/{ingredient_id}")
-def update_ingredient(ingredient_id: int, data: dict, db: Session = Depends(get_db)):
+def update_ingredient(ingredient_id: int, data: IngredientUpdate, db: Session = Depends(get_db)):
     ing = db.query(Ingredient).filter(Ingredient.id == ingredient_id).first()
     if not ing:
         raise HTTPException(404, "Ingredient not found")
-    if "name" in data:
-        ing.name = data["name"]
-    if "unit" in data:
-        ing.unit = data["unit"]
-    if "category" in data:
-        ing.category = data["category"]
-    if "min_stock" in data:
-        ing.min_stock = data["min_stock"]
-    if "cost_per_unit" in data:
-        ing.cost_per_unit = data["cost_per_unit"]
-    if "supplier_id" in data:
-        ing.supplier_id = data["supplier_id"]
-    if "barcode" in data:
-        ing.barcode = data["barcode"]
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(ing, k, v)
     db.commit()
     return {"id": ing.id, "name": ing.name}
 
 
 @router.post("/stock")
-def add_stock(data: dict, db: Session = Depends(get_db)):
-    ing = db.query(Ingredient).filter(Ingredient.id == data["ingredient_id"]).first()
+def add_stock(data: AddStock, db: Session = Depends(get_db)):
+    ing = db.query(Ingredient).filter(Ingredient.id == data.ingredient_id).first()
     if not ing:
         raise HTTPException(404, "Ingredient not found")
-    qty = data["quantity"]
-    ing.stock += qty
+    ing.stock += data.quantity
     tx = StockTransaction(
         ingredient_id=ing.id,
-        type=data.get("type", "purchase"),
-        quantity=qty,
-        note=data.get("note", "")
+        type=data.type,
+        quantity=data.quantity,
+        note=data.note
     )
     db.add(tx)
     db.commit()
@@ -101,17 +95,17 @@ def add_stock(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/waste")
-def record_waste(data: dict, db: Session = Depends(get_db)):
-    ing = db.query(Ingredient).filter(Ingredient.id == data["ingredient_id"]).first()
+def record_waste(data: RecordWaste, db: Session = Depends(get_db)):
+    ing = db.query(Ingredient).filter(Ingredient.id == data.ingredient_id).first()
     if not ing:
         raise HTTPException(404, "Ingredient not found")
-    qty = abs(data["quantity"])
+    qty = abs(data.quantity)
     ing.stock -= qty
     tx = StockTransaction(
         ingredient_id=ing.id,
         type="waste",
         quantity=-qty,
-        note=data.get("reason", "Odpis")
+        note=data.reason
     )
     db.add(tx)
     db.commit()
@@ -119,12 +113,11 @@ def record_waste(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/deduct")
-def deduct_ingredients(data: dict, db: Session = Depends(get_db)):
-    items = data.get("items", [])
+def deduct_ingredients(data: DeductIngredients, db: Session = Depends(get_db)):
     deductions = []
-    for item in items:
-        menu_item_id = item["menu_item_id"]
-        quantity = item.get("quantity", 1)
+    for item in data.items:
+        menu_item_id = item.menu_item_id
+        quantity = item.quantity
         recipes = db.query(RecipeItem).filter(
             RecipeItem.menu_item_id == menu_item_id
         ).all()
@@ -137,7 +130,7 @@ def deduct_ingredients(data: dict, db: Session = Depends(get_db)):
                     ingredient_id=ing.id,
                     type="sale",
                     quantity=-deduct_qty,
-                    note=f"Naročilo #{data.get('order_id', '?')} - artikel #{menu_item_id}"
+                    note=f"Naročilo #{data.order_id or '?'} - artikel #{menu_item_id}"
                 )
                 db.add(tx)
                 deductions.append({
@@ -157,6 +150,28 @@ def low_stock_alerts(db: Session = Depends(get_db)):
         Ingredient.stock <= Ingredient.min_stock
     ).all()
     return [{"id": i.id, "name": i.name, "stock": i.stock, "min_stock": i.min_stock} for i in ingredients]
+
+
+@router.get("/check-stock/{menu_item_id}")
+def check_item_stock(menu_item_id: int, quantity: int = 1, db: Session = Depends(get_db)):
+    recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id == menu_item_id).all()
+    warnings = []
+    for r in recipes:
+        ing = db.query(Ingredient).filter(Ingredient.id == r.ingredient_id).first()
+        if ing:
+            needed = r.quantity * quantity
+            remaining = ing.stock - needed
+            if ing.min_stock > 0 and remaining <= ing.min_stock:
+                warnings.append({
+                    "ingredient_id": ing.id,
+                    "name": ing.name,
+                    "stock": ing.stock,
+                    "min_stock": ing.min_stock,
+                    "needed": needed,
+                    "remaining": remaining,
+                    "critical": remaining <= 0
+                })
+    return {"menu_item_id": menu_item_id, "warnings": warnings, "has_warnings": len(warnings) > 0}
 
 
 @router.get("/transactions")
@@ -192,11 +207,11 @@ def list_recipes(db: Session = Depends(get_db)):
 
 
 @router.post("/recipes")
-def create_recipe(data: dict, db: Session = Depends(get_db)):
+def create_recipe(data: RecipeCreate, db: Session = Depends(get_db)):
     recipe = RecipeItem(
-        menu_item_id=data["menu_item_id"],
-        ingredient_id=data["ingredient_id"],
-        quantity=data["quantity"]
+        menu_item_id=data.menu_item_id,
+        ingredient_id=data.ingredient_id,
+        quantity=data.quantity
     )
     db.add(recipe)
     db.commit()
@@ -291,8 +306,8 @@ def list_stock_count_sessions(branch_id: int = 0, db: Session = Depends(get_db))
 
 
 @router.post("/stock-counts")
-def create_stock_count_session(data: dict, db: Session = Depends(get_db)):
-    branch_id = data.get("branch_id")
+def create_stock_count_session(data: StockCountSessionCreate, db: Session = Depends(get_db)):
+    branch_id = data.branch_id
     ing_q = db.query(Ingredient)
     if branch_id:
         ing_q = ing_q.filter(Ingredient.branch_id == branch_id)
@@ -301,10 +316,10 @@ def create_stock_count_session(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "No ingredients found for this branch")
 
     session = StockCountSession(
-        counted_by=data.get("counted_by"),
+        counted_by=data.counted_by,
         branch_id=branch_id,
         status="in_progress",
-        notes=data.get("notes", "")
+        notes=data.notes
     )
     db.add(session)
     db.flush()
@@ -354,24 +369,24 @@ def get_stock_count_session(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/stock-counts/{session_id}/items/{item_id}")
-def update_stock_count_item(session_id: int, item_id: int, data: dict, db: Session = Depends(get_db)):
+def update_stock_count_item(session_id: int, item_id: int, data: StockCountItemUpdate, db: Session = Depends(get_db)):
     item = db.query(StockCountItem).filter(
         StockCountItem.id == item_id,
         StockCountItem.session_id == session_id
     ).first()
     if not item:
         raise HTTPException(404, "Count item not found")
-    if data.get("physical_quantity") is not None:
-        item.physical_quantity = float(data["physical_quantity"])
+    if data.physical_quantity is not None:
+        item.physical_quantity = data.physical_quantity
         item.variance = round(item.physical_quantity - item.system_quantity, 3)
-    if "notes" in data:
-        item.notes = data["notes"]
+    if data.notes is not None:
+        item.notes = data.notes
     db.commit()
     return {"id": item.id, "variance": item.variance}
 
 
 @router.post("/stock-counts/{session_id}/complete")
-def complete_stock_count_session(session_id: int, data: dict = {}, db: Session = Depends(get_db)):
+def complete_stock_count_session(session_id: int, db: Session = Depends(get_db)):
     session = db.query(StockCountSession).filter(StockCountSession.id == session_id).first()
     if not session:
         raise HTTPException(404, "Session not found")
@@ -434,3 +449,52 @@ def lookup_barcode(code: str, db: Session = Depends(get_db)):
         "stock": ing.stock, "cost_per_unit": ing.cost_per_unit,
         "category": ing.category, "barcode": ing.barcode
     }
+
+
+class BulkRestockRequest(BaseModel):
+    items: List[dict]
+
+
+class BulkWasteRequest(BaseModel):
+    items: List[dict]
+    reason: str = ""
+
+
+@router.post("/bulk/restock")
+def bulk_restock(body: BulkRestockRequest, db: Session = Depends(get_db)):
+    count = 0
+    for item in body.items:
+        ing = db.query(Ingredient).filter(Ingredient.id == item["id"]).first()
+        if not ing:
+            continue
+        qty = item.get("quantity", 0)
+        if qty <= 0:
+            continue
+        ing.stock += qty
+        db.add(StockTransaction(
+            ingredient_id=ing.id, type="restock", quantity=qty,
+            notes=f"Bulk restock"
+        ))
+        count += 1
+    db.commit()
+    return {"restocked": count}
+
+
+@router.post("/bulk/waste")
+def bulk_waste(body: BulkWasteRequest, db: Session = Depends(get_db)):
+    count = 0
+    for item in body.items:
+        ing = db.query(Ingredient).filter(Ingredient.id == item["id"]).first()
+        if not ing:
+            continue
+        qty = item.get("quantity", 0)
+        if qty <= 0:
+            continue
+        ing.stock = max(0, ing.stock - qty)
+        db.add(StockTransaction(
+            ingredient_id=ing.id, type="waste", quantity=-qty,
+            notes=body.reason or "Bulk waste"
+        ))
+        count += 1
+    db.commit()
+    return {"wasted": count}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function SalesTargetPage({ onNotify }: { onNotify?: (msg: string, err?: boolean) => void }) {
   const [data, setData] = useState<any>(null)
@@ -6,7 +7,7 @@ export default function SalesTargetPage({ onNotify }: { onNotify?: (msg: string,
   const [saving, setSaving] = useState(false)
 
   const load = async () => {
-    const r = await fetch('/api/v1/analytics/sales-targets')
+    const r = await fetch('/api/v1/analytics/sales-targets', { headers: api.authHeader() })
     if (r.ok) {
       const d = await r.json()
       setData(d)
@@ -19,7 +20,7 @@ export default function SalesTargetPage({ onNotify }: { onNotify?: (msg: string,
   const saveTargets = async () => {
     setSaving(true)
     await fetch('/api/v1/analytics/sales-targets', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: { 'Content-Type': 'application/json', ...api.authHeader() },
       body: JSON.stringify(editTargets)
     })
     await load()
@@ -60,7 +61,7 @@ export default function SalesTargetPage({ onNotify }: { onNotify?: (msg: string,
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
         <Gauge pct={data.daily_pct} label="Danes" value={data.daily_actual.toLocaleString('sl-SI')}
           target={data.daily_target.toLocaleString('sl-SI')} color={data.daily_pct >= 100 ? '#059669' : data.daily_pct >= 80 ? '#f59e0b' : '#ef4444'} />
-        <Gauge pct={data.monthly_pct} label="Mesec (dan {data.day_of_month}/{data.days_in_month})"
+        <Gauge pct={data.monthly_pct} label={`Mesec (dan ${data.day_of_month}/${data.days_in_month})`}
           value={data.monthly_actual.toLocaleString('sl-SI')} target={data.monthly_target.toLocaleString('sl-SI')}
           color={data.monthly_pct >= 100 ? '#059669' : data.monthly_pct >= 80 ? '#f59e0b' : '#ef4444'} />
       </div>

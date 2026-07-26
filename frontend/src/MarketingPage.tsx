@@ -17,7 +17,7 @@ const STATUS_LABELS: Record<string, string> = {
 const API = '/api/v1/marketing'
 const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('pos_token'), 'Content-Type': 'application/json' })
 
-export default function MarketingPage({ onNotify }: { onNotify: (m: string) => void }) {
+export default function MarketingPage({ onNotify }: { onNotify: (m: string, isError?: boolean) => void }) {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [edit, setEdit] = useState<Campaign | null>(null)
   const [preview, setPreview] = useState<{ count: number; sample: any[] } | null>(null)
@@ -57,7 +57,7 @@ export default function MarketingPage({ onNotify }: { onNotify: (m: string) => v
       if (!r.ok) throw new Error()
       onNotify(edit.id ? 'Posodobljeno' : 'Ustvarjeno')
       setEdit(null); load()
-    } catch { alert('Napaka pri shranjevanju') }
+    } catch { onNotify('Napaka pri shranjevanju', true) }
   }
 
   const previewSegment = async () => {
@@ -76,7 +76,7 @@ export default function MarketingPage({ onNotify }: { onNotify: (m: string) => v
       if (!r.ok) throw new Error()
       onNotify('Kampanja poslana!')
       load()
-    } catch { alert('Napaka pri pošiljanju') }
+    } catch { onNotify('Napaka pri pošiljanju', true) }
     setSending(false)
   }
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.waitlist import WaitlistEntry
+from app.schemas.waitlist import AddWaitlist, PublicAddWaitlist
 from datetime import datetime
 
 router = APIRouter(prefix="/waitlist", tags=["waitlist"])
@@ -24,13 +25,13 @@ def list_waitlist(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def add_waitlist(data: dict, db: Session = Depends(get_db)):
+def add_waitlist(data: AddWaitlist, db: Session = Depends(get_db)):
     entry = WaitlistEntry(
-        name=data["name"],
-        phone=data.get("phone"),
-        party_size=data.get("party_size", 2),
-        notes=data.get("notes"),
-        branch_id=data.get("branch_id"),
+        name=data.name,
+        phone=data.phone,
+        party_size=data.party_size,
+        notes=data.notes,
+        branch_id=data.branch_id,
     )
     db.add(entry)
     db.commit()
@@ -82,14 +83,14 @@ def delete_waitlist(entry_id: int, db: Session = Depends(get_db)):
 
 # Public endpoint for customers to add themselves
 @router.post("/public")
-def public_add_waitlist(data: dict, db: Session = Depends(get_db)):
-    if not data.get("name"):
+def public_add_waitlist(data: PublicAddWaitlist, db: Session = Depends(get_db)):
+    if not data.name:
         raise HTTPException(400, "Name is required")
     entry = WaitlistEntry(
-        name=data["name"],
-        phone=data.get("phone"),
-        party_size=data.get("party_size", 2),
-        notes=data.get("notes"),
+        name=data.name,
+        phone=data.phone,
+        party_size=data.party_size,
+        notes=data.notes,
     )
     db.add(entry)
     db.commit()

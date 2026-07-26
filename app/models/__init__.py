@@ -11,7 +11,7 @@ from .customer import Customer
 from .menu_course import MenuCourse
 from .supplier import Supplier, PurchaseOrder, PurchaseOrderItem
 from .reservation import Reservation
-from .shift import EmployeeShift
+from .shift import EmployeeShift, ShiftSwapRequest
 from .gift_card import GiftCard, GiftCardTransaction
 from .branch import Branch
 from .inventory import Ingredient, RecipeItem, StockTransaction, StockCountSession, StockCountItem
@@ -27,6 +27,14 @@ from .expense import Expense
 from .budget import Budget
 from .planned_shift import PlannedShift
 from .price_rule import PriceRule
+from .notification import Notification
+from .waitlist import WaitlistEntry
+from .settings import Setting
+from .kds_timer import KDSTimer
+from .service_request import ServiceRequest
+from .order_template import OrderTemplate
+from .house_account import HouseAccount, HouseAccountTransaction
+from .dynamic_menu import DynamicMenuSuggestion
 
 __all__ = [
     "User", "Category", "MenuItem", "MenuVersion", "TableModel",
@@ -35,9 +43,13 @@ __all__ = [
     "ModifierGroup", "ModifierOption", "MenuItemModifierLink",
     "Customer", "MenuCourse",
     "Supplier", "PurchaseOrder", "PurchaseOrderItem",
-    "Reservation", "EmployeeShift",
+    "Reservation", "EmployeeShift", "ShiftSwapRequest",
     "GiftCard", "GiftCardTransaction",
     "Branch",
     "Ingredient", "RecipeItem", "StockTransaction", "StockCountSession", "StockCountItem",
-    "Promotion", "Rating", "LoyaltyTransaction", "Invoice", "Campaign", "CampaignRecipient", "CateringOrder", "DeliveryOrder", "WasteRecord", "Expense", "Budget", "PlannedShift", "PriceRule"
+    "Promotion", "Rating", "LoyaltyTransaction", "Invoice", "Campaign", "CampaignRecipient",
+    "CateringOrder", "DeliveryOrder", "WasteRecord", "Expense", "Budget", "PlannedShift", "PriceRule",
+    "Notification", "WaitlistEntry", "Setting", "KDSTimer", "ServiceRequest",
+    "OrderTemplate", "HouseAccount", "HouseAccountTransaction",
+    "DynamicMenuSuggestion",
 ]

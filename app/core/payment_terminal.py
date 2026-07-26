@@ -82,7 +82,7 @@ def _verifone_status(host: str, port: int, timeout: int) -> dict:
         resp = s.recv(4096).decode().strip()
         s.close()
         return {"online": resp == "OK", "mode": "verifone"}
-    except:
+    except (OSError, TimeoutError):
         return {"online": False, "error": "Connection failed"}
 
 
@@ -106,7 +106,7 @@ def _pax_pay(amount: float, reference: str,
             "reference": reference,
             "terminal": "pax",
         }
-    except:
+    except (json.JSONDecodeError, OSError):
         return {"approved": False, "error": resp}
 
 
@@ -118,7 +118,7 @@ def _pax_status(host: str, port: int, timeout: int) -> dict:
         s.close()
         data = json.loads(resp)
         return {"online": True, "mode": "pax", **data}
-    except:
+    except (OSError, TimeoutError):
         return {"online": False, "error": "Connection failed"}
 
 

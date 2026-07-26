@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
 from app.models.expense import Expense
+from app.schemas.expense import ExpenseCreate, ExpenseUpdate
 from datetime import datetime, timedelta
+from app.models.user import User
+from app.api.v1.auth import get_current_user
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -15,20 +18,20 @@ CATEGORY_LABELS.update({"rent": "Najemnina", "utilities": "Storitve", "marketing
 
 
 @router.post("")
-def create_expense(data: dict, db: Session = Depends(get_db)):
+def create_expense(data: ExpenseCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     exp = Expense(
-        name=data["name"], amount=float(data["amount"]),
-        category=data.get("category", "other"),
-        expense_date=datetime.fromisoformat(data.get("expense_date", str(datetime.now().date())).split("T")[0]).date(),
-        notes=data.get("notes", ""), branch_id=data.get("branch_id"),
-        created_by=data.get("created_by")
+        name=data.name, amount=float(data.amount),
+        category=data.category,
+        expense_date=datetime.fromisoformat((data.expense_date or str(datetime.now().date())).split("T")[0]).date(),
+        notes=data.notes, branch_id=data.branch_id,
+        created_by=data.created_by
     )
     db.add(exp); db.commit(); db.refresh(exp)
     return {"id": exp.id, "name": exp.name, "amount": exp.amount, "category": exp.category}
 
 
 @router.get("")
-def list_expenses(days: int = 30, category: str = "", branch_id: int = 0, db: Session = Depends(get_db)):
+def list_expenses(days: int = 30, category: str = "", branch_id: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     since = datetime.now() - timedelta(days=days)
     q = db.query(Expense).filter(Expense.created_at >= since)
     if category:
@@ -43,13 +46,13 @@ def list_expenses(days: int = 30, category: str = "", branch_id: int = 0, db: Se
 
 
 @router.put("/{expense_id}")
-def update_expense(expense_id: int, data: dict, db: Session = Depends(get_db)):
+def update_expense(expense_id: int, data: ExpenseUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     e = db.query(Expense).filter(Expense.id == expense_id).first()
     if not e:
         raise HTTPException(404, "Expense not found")
     for k in ("name", "amount", "category", "expense_date", "notes"):
-        if k in data:
-            v = data[k]
+        v = getattr(data, k)
+        if v is not None:
             if k == "expense_date":
                 v = datetime.fromisoformat(v.split("T")[0]).date()
             setattr(e, k, v)
@@ -58,7 +61,7 @@ def update_expense(expense_id: int, data: dict, db: Session = Depends(get_db)):
 
 
 @router.delete("/{expense_id}")
-def delete_expense(expense_id: int, db: Session = Depends(get_db)):
+def delete_expense(expense_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     e = db.query(Expense).filter(Expense.id == expense_id).first()
     if not e:
         raise HTTPException(404, "Expense not found")
@@ -67,7 +70,7 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/analytics")
-def expense_analytics(days: int = 30, branch_id: int = 0, db: Session = Depends(get_db)):
+def expense_analytics(days: int = 30, branch_id: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     since = datetime.now() - timedelta(days=days)
     q = db.query(Expense).filter(Expense.created_at >= since)
     if branch_id:

@@ -6,18 +6,11 @@ from app.models.loyalty import LoyaltyTransaction
 from app.models.order import Order
 from app.models.settings import Setting
 from app.api.v1.audit_log import log_action
+from app.schemas.loyalty import SetLoyaltySettings, RedeemPoints, AdjustPoints, SetTiers
 from datetime import datetime, timedelta
 import json
 
 router = APIRouter(prefix="/loyalty", tags=["loyalty"])
-
-
-def get_setting(key: str, default: str = "") -> str:
-    try:
-        db = next(iter([]))
-        return default
-    except:
-        return default
 
 
 @router.get("/settings")
@@ -30,8 +23,9 @@ def get_loyalty_settings(db: Session = Depends(get_db)):
 
 
 @router.put("/settings")
-def set_loyalty_settings(data: dict, db: Session = Depends(get_db)):
-    for k, v in data.items():
+def set_loyalty_settings(data: SetLoyaltySettings, db: Session = Depends(get_db)):
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
         row = db.query(Setting).filter(Setting.key == k).first()
         if row:
             row.value = str(v)
@@ -74,10 +68,10 @@ def get_loyalty_status(customer_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/redeem")
-def redeem_points(data: dict, db: Session = Depends(get_db)):
-    customer_id = data.get("customer_id")
-    points = data.get("points", 0)
-    order_id = data.get("order_id")
+def redeem_points(data: RedeemPoints, db: Session = Depends(get_db)):
+    customer_id = data.customer_id
+    points = data.points
+    order_id = data.order_id
 
     cust = db.query(Customer).filter(Customer.id == customer_id).first()
     if not cust:
@@ -126,10 +120,10 @@ def enroll_customer(customer_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/adjust")
-def adjust_points(data: dict, db: Session = Depends(get_db)):
-    customer_id = data.get("customer_id")
-    points = data.get("points", 0)
-    note = data.get("note", "")
+def adjust_points(data: AdjustPoints, db: Session = Depends(get_db)):
+    customer_id = data.customer_id
+    points = data.points
+    note = data.note
     cust = db.query(Customer).filter(Customer.id == customer_id).first()
     if not cust:
         raise HTTPException(404, "Customer not found")
@@ -138,6 +132,56 @@ def adjust_points(data: dict, db: Session = Depends(get_db)):
     db.add(lt)
     db.commit()
     return {"ok": True, "new_balance": cust.loyalty_points}
+
+
+@router.post("/birthday-bonus")
+def award_birthday_bonuses(db: Session = Depends(get_db)):
+    from datetime import date
+    today = date.today()
+    members = db.query(Customer).filter(
+        Customer.is_member == True,
+        Customer.birthday.isnot(None)
+    ).all()
+    awarded = 0
+    for cust in members:
+        if cust.birthday.month == today.month and cust.birthday.day == today.day:
+            already = db.query(LoyaltyTransaction).filter(
+                LoyaltyTransaction.customer_id == cust.id,
+                LoyaltyTransaction.type == "birthday",
+                LoyaltyTransaction.created_at >= datetime(today.year, today.month, today.day)
+            ).first()
+            if already:
+                continue
+            bonus_setting = db.query(Setting).filter(Setting.key == "loyalty_birthday_bonus").first()
+            bonus = int(bonus_setting.value) if bonus_setting and bonus_setting.value else 100
+            cust.loyalty_points = (cust.loyalty_points or 0) + bonus
+            lt = LoyaltyTransaction(customer_id=cust.id, points=bonus, type="birthday", note=f"Rojstnodnevni bonus {today.year}")
+            db.add(lt)
+            awarded += 1
+    db.commit()
+    return {"awarded": awarded, "date": str(today)}
+
+
+@router.get("/birthdays")
+def get_birthday_members(db: Session = Depends(get_db)):
+    from datetime import date
+    today = date.today()
+    members = db.query(Customer).filter(
+        Customer.is_member == True,
+        Customer.birthday.isnot(None)
+    ).all()
+    result = []
+    for c in members:
+        if c.birthday.month == today.month and c.birthday.day == today.day:
+            result.append({"id": c.id, "name": c.name, "phone": c.phone, "birthday": str(c.birthday), "status": "today"})
+    if not result:
+        from datetime import timedelta
+        next_week = today + timedelta(days=7)
+        for c in members:
+            bday_this_year = c.birthday.replace(year=today.year)
+            if today <= bday_this_year <= next_week:
+                result.append({"id": c.id, "name": c.name, "phone": c.phone, "birthday": str(c.birthday), "status": "upcoming"})
+    return result
 
 
 @router.get("")
@@ -190,8 +234,8 @@ def get_tiers(db: Session = Depends(get_db)):
 
 
 @router.put("/tiers")
-def set_tiers(data: dict, db: Session = Depends(get_db)):
-    tiers = data.get("tiers", [])
+def set_tiers(data: SetTiers, db: Session = Depends(get_db)):
+    tiers = data.tiers
     row = db.query(Setting).filter(Setting.key == "loyalty_tiers").first()
     if row:
         row.value = json.dumps(tiers)

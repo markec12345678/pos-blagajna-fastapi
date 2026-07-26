@@ -16,15 +16,15 @@ export default function ScheduledOrdersPage({ onNotify }: { onNotify: (msg: stri
     try {
       const r = await fetch('/api/v1/orders/scheduled', { headers: api.h() })
       setOrders(await r.json())
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju načrtovanih naročil') }
     try {
       const m = await api.getMenu()
       setMenu(m)
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju menija') }
     try {
       const t = await api.getTables()
       setTables(t)
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju miz') }
     setLoading(false)
   }
 

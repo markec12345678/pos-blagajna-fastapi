@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 const STATUS_LABELS: Record<string, string> = {
   waiting: 'Čaka', notified: 'Obveščen', seated: 'Useden', cancelled: 'Preklican'
@@ -14,7 +15,7 @@ export default function WaitlistPage({ onNotify }: { onNotify: (m: string) => vo
   const [form, setForm] = useState({ name: '', phone: '', party_size: 2, notes: '' })
 
   const load = () => {
-    fetch('/api/v1/waitlist', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch('/api/v1/waitlist', { headers: api.authHeader() })
       .then(r => r.json()).then(setEntries)
   }
   useEffect(() => { load() }, [])
@@ -23,7 +24,7 @@ export default function WaitlistPage({ onNotify }: { onNotify: (m: string) => vo
     if (!form.name.trim()) return
     await fetch('/api/v1/waitlist', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify(form)
     })
     onNotify('Dodano na čakalnico')
@@ -34,7 +35,7 @@ export default function WaitlistPage({ onNotify }: { onNotify: (m: string) => vo
 
   const updateStatus = async (id: number, action: string, msg: string) => {
     await fetch(`/api/v1/waitlist/${id}/${action}`, {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      method: 'POST', headers: api.authHeader()
     })
     onNotify(msg)
     load()
@@ -43,7 +44,7 @@ export default function WaitlistPage({ onNotify }: { onNotify: (m: string) => vo
   const del = async (id: number) => {
     if (!confirm('Izbriši?')) return
     await fetch(`/api/v1/waitlist/${id}`, {
-      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      method: 'DELETE', headers: api.authHeader()
     })
     onNotify('Izbrisano')
     load()

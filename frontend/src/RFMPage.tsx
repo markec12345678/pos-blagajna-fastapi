@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface RFMCustomer {
   customer_id: number; name: string; phone: string; email: string;
@@ -31,7 +32,7 @@ export default function RFMPage({ onNotify }: { onNotify: (msg: string) => void 
   useEffect(() => {
     setLoading(true)
     fetch(`/api/v1/analytics/customer-rfm?min_orders=${minOrders}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     }).then(r => r.json()).then(d => { setData(d); setLoading(false) })
       .catch(() => { setLoading(false); onNotify('Napaka pri RFM analizi') })
   }, [minOrders])

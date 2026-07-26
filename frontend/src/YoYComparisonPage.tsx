@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface YoYData {
   current: {
@@ -22,7 +23,7 @@ export default function YoYComparisonPage({ onNotify }: { onNotify: (msg: string
   useEffect(() => {
     setLoading(true)
     fetch(`/api/v1/analytics/yoy-comparison?days=${days}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     }).then(r => r.json()).then(d => { setData(d); setLoading(false) })
       .catch(() => { setLoading(false); onNotify('Napaka pri YoY primerjavi') })
   }, [days])

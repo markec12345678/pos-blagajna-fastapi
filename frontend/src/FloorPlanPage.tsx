@@ -6,6 +6,10 @@ export default function FloorPlanPage({ onNotify }: { onNotify?: (msg: string, e
   const [branchId, setBranchId] = useState(0)
   const [dragging, setDragging] = useState<number | null>(null)
   const [showEditor, setShowEditor] = useState<any>(null)
+  const [snapToGrid, setSnapToGrid] = useState(true)
+  const [zoom, setZoom] = useState(1)
+  const [multiSelect, setMultiSelect] = useState<Set<number>>(new Set())
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const load = async () => {
@@ -19,18 +23,32 @@ export default function FloorPlanPage({ onNotify }: { onNotify?: (msg: string, e
 
   useEffect(() => { load() }, [branchId])
 
-  const handleMouseDown = (id: number, e: React.MouseEvent) => {
+  const handleMouseDown = (id: number, e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault()
+    const table = tables.find(t => t.id === id)
+    if (!table || !canvasRef.current) return
+    const rect = canvasRef.current.getBoundingClientRect()
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    setDragOffset({ x: clientX - rect.left - table.pos_x, y: clientY - rect.top - table.pos_y })
     setDragging(id)
   }
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (dragging === null || !canvasRef.current) return
     const rect = canvasRef.current.getBoundingClientRect()
-    const x = Math.round(e.clientX - rect.left - 30)
-    const y = Math.round(e.clientY - rect.top - 30)
-    setTables(prev => prev.map(t => t.id === dragging ? { ...t, pos_x: Math.max(0, x), pos_y: Math.max(0, y) } : t))
-  }, [dragging])
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    let x = Math.round(clientX - rect.left - dragOffset.x)
+    let y = Math.round(clientY - rect.top - dragOffset.y)
+    if (snapToGrid) {
+      x = Math.round(x / 25) * 25
+      y = Math.round(y / 25) * 25
+    }
+    x = Math.max(0, x)
+    y = Math.max(0, y)
+    setTables(prev => prev.map(t => t.id === dragging ? { ...t, pos_x: x, pos_y: y } : t))
+  }, [dragging, dragOffset, snapToGrid])
 
   const handleMouseUp = useCallback(async () => {
     if (dragging === null) return
@@ -48,9 +66,13 @@ export default function FloorPlanPage({ onNotify }: { onNotify?: (msg: string, e
     if (dragging !== null) {
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', handleMouseUp)
+      window.addEventListener('touchmove', handleMouseMove, { passive: false })
+      window.addEventListener('touchend', handleMouseUp)
       return () => {
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
+        window.removeEventListener('touchmove', handleMouseMove)
+        window.removeEventListener('touchend', handleMouseUp)
       }
     }
   }, [dragging, handleMouseMove, handleMouseUp])
@@ -95,19 +117,38 @@ export default function FloorPlanPage({ onNotify }: { onNotify?: (msg: string, e
     <div>
       <div className="page-header">
         <h2>🏗️ Tloris</h2>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select className="input" value={branchId} onChange={e => setBranchId(parseInt(e.target.value))}
             style={{ width: 180 }}>
             <option value={0}>Vse podružnice</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
+          <button onClick={() => setSnapToGrid(s => !s)} className={`btn btn-sm ${snapToGrid ? 'btn-primary' : 'btn-ghost'}`} title="Snap na mrežo">
+            🧲 {snapToGrid ? 'Snap ON' : 'Snap OFF'}
+          </button>
+          <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="btn btn-sm btn-ghost" title="Manjšaj">🔍−</button>
+          <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 40, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="btn btn-sm btn-ghost" title="Povečaj">🔍+</button>
+          {multiSelect.size > 0 && (
+            <button onClick={async () => {
+              const branch = prompt('Podružnica ID (prazno = trenutna):')
+              for (const id of multiSelect) {
+                await fetch(`/api/v1/tables/${id}`, {
+                  method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ branch_id: branch ? parseInt(branch) : undefined })
+                })
+              }
+              onNotify?.(`${multiSelect.size} miz premaknjenih`); setMultiSelect(new Set()); load()
+            }} className="btn btn-sm btn-blue">Premakni ({multiSelect.size})</button>
+          )}
           <button className="btn btn-primary" onClick={addTable}>+ Dodaj mizo</button>
         </div>
       </div>
 
       <div ref={canvasRef} style={{
         position: 'relative', background: '#1e293b', borderRadius: 16, minHeight: 500,
-        marginBottom: 16, overflow: 'hidden', border: '1px solid #334155'
+        marginBottom: 16, overflow: 'hidden', border: '1px solid #334155',
+        transform: `scale(${zoom})`, transformOrigin: 'top left'
       }}>
         <div style={{ position: 'absolute', top: 8, left: 8, fontSize: 11, color: '#64748b' }}>
           🖱️ Povleci mize za premikanje
@@ -134,18 +175,33 @@ export default function FloorPlanPage({ onNotify }: { onNotify?: (msg: string, e
           const color = statusColors[t.status] || '#94a3b8'
           const size = Math.min(40 + t.capacity * 10, 100)
           const isCircle = t.shape === 'circle'
+          const isSelected = multiSelect.has(t.id)
           return (
             <div key={t.id} onMouseDown={e => handleMouseDown(t.id, e)}
-              onClick={() => setShowEditor(t)}
+              onTouchStart={e => handleMouseDown(t.id, e)}
+              onClick={(e) => {
+                if (e.shiftKey) {
+                  setMultiSelect(prev => {
+                    const next = new Set(prev)
+                    if (next.has(t.id)) next.delete(t.id); else next.add(t.id)
+                    return next
+                  })
+                } else if (!dragging) {
+                  setShowEditor(t)
+                }
+              }}
               style={{
                 position: 'absolute', left: t.pos_x, top: t.pos_y, cursor: 'grab',
                 width: isCircle ? size : size * 1.4, height: isCircle ? size : size * 0.7,
                 borderRadius: isCircle ? '50%' : 8,
-                background: color + '25', border: `3px solid ${color}`,
+                background: color + '25', border: `3px solid ${isSelected ? '#e2e8f0' : color}`,
+                outline: isSelected ? '2px dashed #e2e8f0' : 'none',
+                outlineOffset: 2,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexDirection: 'column', transition: dragging === t.id ? 'none' : 'box-shadow 0.15s',
                 boxShadow: dragging === t.id ? `0 0 20px ${color}60` : `0 2px 8px rgba(0,0,0,0.3)`,
-                userSelect: 'none', zIndex: dragging === t.id ? 100 : 1
+                userSelect: 'none', zIndex: dragging === t.id ? 100 : 1,
+                touchAction: 'none'
               }}>
               <div style={{ fontSize: Math.min(16, 8 + t.capacity * 2), fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
                 {t.name.split(' ').pop()}

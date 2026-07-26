@@ -26,3 +26,5 @@ class Invoice(Base):
     notes = Column(Text, default="")
     eracun_status = Column(String, default="pending")
     eracun_xml_id = Column(String, default="")
+    credit_note_ref = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    credit_reason = Column(String, default="")

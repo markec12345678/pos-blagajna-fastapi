@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.settings import Setting
+from app.models.user import User
+from app.api.v1.auth import get_current_user
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -48,16 +50,14 @@ DEFAULTS = {
 
 
 @router.get("")
-def get_settings(db: Session = Depends(get_db)):
-    result = {}
-    for key, default in DEFAULTS.items():
-        setting = db.query(Setting).filter(Setting.key == key).first()
-        result[key] = setting.value if setting else default
-    return result
+def get_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    all_settings = db.query(Setting).all()
+    settings_dict = {s.key: s.value for s in all_settings}
+    return {key: settings_dict.get(key, default) for key, default in DEFAULTS.items()}
 
 
 @router.put("")
-def update_settings(data: dict, db: Session = Depends(get_db)):
+def update_settings(data: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     for key, value in data.items():
         if key in DEFAULTS:
             setting = db.query(Setting).filter(Setting.key == key).first()
@@ -70,7 +70,7 @@ def update_settings(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/test-email")
-def test_email(data: dict, db: Session = Depends(get_db)):
+def test_email(data: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     import smtplib
     from email.mime.text import MIMEText
     host = _get_setting(db, "smtp_host")

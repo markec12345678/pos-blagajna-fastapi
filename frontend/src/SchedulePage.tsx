@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import * as api from './api'
 
 const DOWS = ['Ponedeljek', 'Torek', 'Sreda', 'Četrtek', 'Petek', 'Sobota', 'Nedelja']
 const API = '/api/v1/schedule'
-const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json' })
+const auth = () => ({ ...api.authHeader(), 'Content-Type': 'application/json' })
 
 interface ShiftRow { id: number; user_id: number; user_name: string; date: string; start_time: string; end_time: string; role: string; notes: string; status: string }
 interface Employee { id: number; name: string; role: string }
@@ -15,6 +16,8 @@ export default function SchedulePage({ onNotify }: { onNotify: (m: string) => vo
     const d = new Date(); d.setDate(d.getDate() - d.getDay() + 1); return d.toISOString().slice(0, 10)
   })
   const [editModal, setEditModal] = useState<{ id?: number; user_id: number; date: string; start_time: string; end_time: string; role: string; notes: string } | null>(null)
+  const [dragShift, setDragShift] = useState<{ id: number; from: string } | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -53,6 +56,40 @@ export default function SchedulePage({ onNotify }: { onNotify: (m: string) => vo
     onNotify('Izbrisano'); load()
   }
 
+  const moveShift = async (shiftId: number, newDate: string) => {
+    try {
+      await fetch(`${API}/shifts/${shiftId}`, { method: 'PUT', headers: auth(), body: JSON.stringify({ date: newDate }) })
+      onNotify(`Izmena prestavljena na ${newDate}`)
+      load()
+    } catch { onNotify('Napaka pri premiku') }
+  }
+
+  const handleDragStart = (e: React.DragEvent, shiftId: number, fromDate: string) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({ id: shiftId, from: fromDate }))
+    e.dataTransfer.effectAllowed = 'move'
+    setDragShift({ id: shiftId, from: fromDate })
+  }
+
+  const handleDragOver = (e: React.DragEvent, date: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(date)
+  }
+
+  const handleDragLeave = () => { setDropTarget(null) }
+
+  const handleDrop = (e: React.DragEvent, toDate: string) => {
+    e.preventDefault()
+    setDropTarget(null)
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'))
+      if (data.from !== toDate) moveShift(data.id, toDate)
+    } catch {}
+    setDragShift(null)
+  }
+
+  const handleDragEnd = () => { setDragShift(null); setDropTarget(null) }
+
   return (
     <div className="page-container" style={{ maxWidth: 1000, margin: '0 auto', padding: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -72,45 +109,49 @@ export default function SchedulePage({ onNotify }: { onNotify: (m: string) => vo
       ) : weekData ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {weekData.days.map((day: any, idx: number) => (
-            <div key={day.date} className="card" style={{ padding: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{DOWS[idx]}</span>
-                  <span style={{ color: 'var(--text2)', fontSize: 12, marginLeft: 8 }}>{day.date}</span>
+              <div key={day.date} className="card" style={{ padding: 12, transition: 'background 0.2s', background: dropTarget === day.date ? 'rgba(59,130,246,0.15)' : undefined }}
+                onDragOver={e => handleDragOver(e, day.date)} onDragLeave={handleDragLeave}
+                onDrop={e => handleDrop(e, day.date)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{DOWS[idx]}</span>
+                    <span style={{ color: 'var(--text2)', fontSize: 12, marginLeft: 8 }}>{day.date}</span>
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--text2)' }}>{day.shifts.length} izmen</span>
                 </div>
-                <span style={{ fontSize: 12, color: 'var(--text2)' }}>{day.shifts.length} izmen</span>
-              </div>
-              {day.shifts.length === 0 ? (
-                <p style={{ fontSize: 12, color: 'var(--text2)', margin: 0 }}>Ni izmen</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {day.shifts.map((s: any) => {
-                    const isToday = day.date === new Date().toISOString().slice(0, 10)
-                    return (
-                      <div key={s.id} style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '6px 10px', borderRadius: 6, fontSize: 13,
-                        background: s.status === 'cancelled' ? 'rgba(239,68,68,0.08)' : isToday ? 'rgba(59,130,246,0.06)' : 'var(--bg)',
-                        borderLeft: s.status === 'cancelled' ? '3px solid #ef4444' : isToday ? '3px solid #3b82f6' : '3px solid transparent'
-                      }}>
-                        <div>
-                          <span style={{ fontWeight: 600 }}>{s.user_name}</span>
-                          {s.role && <span style={{ color: 'var(--text2)', fontSize: 11, marginLeft: 6 }}>{s.role}</span>}
+                {day.shifts.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--text2)', margin: 0, padding: 8, border: dropTarget === day.date ? '2px dashed var(--primary)' : '2px dashed transparent', borderRadius: 6 }}>Ni izmen</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {day.shifts.map((s: any) => {
+                      const isToday = day.date === new Date().toISOString().slice(0, 10)
+                      return (
+                        <div key={s.id} draggable={true} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '6px 10px', borderRadius: 6, fontSize: 13, cursor: 'grab',
+                          background: s.status === 'cancelled' ? 'rgba(239,68,68,0.08)' : isToday ? 'rgba(59,130,246,0.06)' : 'var(--bg)',
+                          borderLeft: s.status === 'cancelled' ? '3px solid #ef4444' : isToday ? '3px solid #3b82f6' : '3px solid transparent',
+                          opacity: dragShift?.id === s.id ? 0.4 : 1
+                        }}
+                          onDragStart={e => handleDragStart(e, s.id, day.date)} onDragEnd={handleDragEnd}>
+                          <div>
+                            <span style={{ fontWeight: 600 }}>{s.user_name}</span>
+                            {s.role && <span style={{ color: 'var(--text2)', fontSize: 11, marginLeft: 6 }}>{s.role}</span>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontWeight: 500 }}>{s.start_time} – {s.end_time}</span>
+                            {s.notes && <span style={{ fontSize: 11, color: 'var(--text2)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.notes}</span>}
+                            {s.status === 'cancelled' && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 600 }}>PREKLIC</span>}
+                            <button onClick={() => setEditModal({
+                              id: s.id, user_id: s.user_id, date: day.date,
+                              start_time: s.start_time, end_time: s.end_time,
+                              role: s.role, notes: s.notes
+                            })} className="btn btn-sm btn-ghost" style={{ fontSize: 11 }}>✎</button>
+                            <button onClick={() => deleteShift(s.id)} className="btn btn-sm btn-ghost" style={{ fontSize: 11, color: '#ef4444' }}>✕</button>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontWeight: 500 }}>{s.start_time} – {s.end_time}</span>
-                          {s.notes && <span style={{ fontSize: 11, color: 'var(--text2)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.notes}</span>}
-                          {s.status === 'cancelled' && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 600 }}>PREKLIC</span>}
-                          <button onClick={() => setEditModal({
-                            id: s.id, user_id: s.user_id, date: day.date,
-                            start_time: s.start_time, end_time: s.end_time,
-                            role: s.role, notes: s.notes
-                          })} className="btn btn-sm btn-ghost" style={{ fontSize: 11 }}>✎</button>
-                          <button onClick={() => deleteShift(s.id)} className="btn btn-sm btn-ghost" style={{ fontSize: 11, color: '#ef4444' }}>✕</button>
-                        </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
                 </div>
               )}
               <button onClick={() => setEditModal({

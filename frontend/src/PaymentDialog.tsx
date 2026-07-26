@@ -1,6 +1,5 @@
 import { useState } from 'react'
-
-const api = { authHeader: () => ({ 'Authorization': `Bearer ${localStorage.getItem('pos-token')||''}` }) }
+import * as api from './api'
 
 export default function PaymentDialog({ total, onPay, onClose, customer }: { total: number; onPay: (m: string, tip: number, payAmount?: number) => void; onClose: () => void; customer?: { id: number; name: string; loyalty_points?: number; is_member?: boolean } | null }) {
   const [tipPct, setTipPct] = useState(0)
@@ -14,8 +13,8 @@ export default function PaymentDialog({ total, onPay, onClose, customer }: { tot
   const [loading, setLoading] = useState(false)
   const tipAmount = useCustom ? (parseFloat(customTip) || 0) : (total * tipPct / 100)
   const maxLoyaltyPts = Math.min(customer?.loyalty_points || 0, Math.floor(total * 100))
-  const loyaltyDiscount = Math.floor(loyaltyPts / 100)
-  const grandTotal = Math.max(0, total + tipAmount - loyaltyDiscount)
+  const loyaltyDiscount = Math.floor((loyaltyPts || 0) / 100)
+  const grandTotal = Math.max(0, (total || 0) + (tipAmount || 0) - loyaltyDiscount)
   const gcMax = gcBalance !== null ? Math.min(gcBalance, grandTotal) : 0
 
   const lookupGC = async () => {
@@ -35,23 +34,25 @@ export default function PaymentDialog({ total, onPay, onClose, customer }: { tot
       // Apply loyalty
       if (useLoyalty && loyaltyPts > 0 && customer) {
         const r = await fetch(`/api/v1/customers/${customer.id}/redeem-points`, { method: 'POST', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({ points: loyaltyPts }) }).then(r => r.json())
-        remaining -= r.discount
+        if (r.discount && typeof r.discount === 'number' && !isNaN(r.discount)) {
+          remaining = Math.max(0, remaining - r.discount)
+        }
       }
       // Apply gift card
       let usedGC = 0
       if (gcBalance && gcBalance > 0 && remaining > 0.01) {
         const gcAmount = Math.min(gcBalance, remaining)
         await fetch('/api/v1/gift-cards/redeem', { method: 'POST', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({ code: gcCode, amount: gcAmount, reference: `Order via ${method}` }) }).then(r => r.json())
-        remaining -= gcAmount
+        remaining = Math.max(0, remaining - gcAmount)
         usedGC = gcAmount
       }
-      // Pay remaining (pass remaining so POS doesn't overcharge)
+      // Pay remaining
       if (remaining > 0.01) {
-        onPay(method, tipAmount, remaining)
+        onPay(method, tipAmount, Math.round(remaining * 100) / 100)
       } else {
-        onPay(method, tipAmount, 0.01)
+        onPay(method, tipAmount, 0)
       }
-    } catch (e: any) { alert(e.message); setLoading(false) }
+    } catch (e: any) { alert(e.message || 'Napaka pri plačilu'); setLoading(false) }
   }
 
   return (

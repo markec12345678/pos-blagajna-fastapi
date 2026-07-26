@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function OrderTemplatesPage({ onNotify }: { onNotify: (m: string) => void }) {
   const [templates, setTemplates] = useState<any[]>([])
@@ -12,9 +13,9 @@ export default function OrderTemplatesPage({ onNotify }: { onNotify: (m: string)
 
   const load = () => {
     Promise.all([
-      fetch('/api/v1/order-templates', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
-      fetch('/api/v1/menu/items?all=true', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
-      fetch('/api/v1/tables', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
+      fetch('/api/v1/order-templates', { headers: api.authHeader() }).then(r => r.json()),
+      fetch('/api/v1/menu/items?all=true', { headers: api.authHeader() }).then(r => r.json()),
+      fetch('/api/v1/tables', { headers: api.authHeader() }).then(r => r.json()),
     ]).then(([t, m, tb]) => { setTemplates(t); setMenu(m); setTables(tb) })
   }
   useEffect(() => { load() }, [])
@@ -30,7 +31,7 @@ export default function OrderTemplatesPage({ onNotify }: { onNotify: (m: string)
     const method = editId ? 'PUT' : 'POST'
     await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: form.name, category: form.category, items })
     })
     onNotify(editId ? 'Posodobljeno' : 'Ustvarjeno')
@@ -51,7 +52,7 @@ export default function OrderTemplatesPage({ onNotify }: { onNotify: (m: string)
 
   const remove = async (id: number) => {
     if (!confirm('Izbrišem predlogo?')) return
-    await fetch(`/api/v1/order-templates/${id}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    await fetch(`/api/v1/order-templates/${id}`, { method: 'DELETE', headers: api.authHeader() })
     onNotify('Izbrisano'); load()
   }
 
@@ -59,8 +60,8 @@ export default function OrderTemplatesPage({ onNotify }: { onNotify: (m: string)
     if (!applyId || !applyTable) return
     const r = await fetch(`/api/v1/order-templates/${applyId}/apply`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-      body: JSON.stringify({ table_id: parseInt(applyTable), cashier_id: 1 })
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ table_id: parseInt(applyTable) })
     })
     const d = await r.json()
     if (r.ok) {

@@ -5,6 +5,7 @@ from app.models.promotion import Promotion
 from app.models.order import Order, OrderItem
 from app.models.menu_item import MenuItem
 from app.models.audit_log import AuditLog
+from app.schemas.promotion import CreatePromotion, UpdatePromotion, CalculatePromotion
 from datetime import datetime
 import json
 
@@ -20,19 +21,19 @@ def list_promotions(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_promotion(data: dict, db: Session = Depends(get_db)):
+def create_promotion(data: CreatePromotion, db: Session = Depends(get_db)):
     promo = Promotion(
-        name=data["name"], type=data["type"], value=data.get("value", 0),
-        min_order=data.get("min_order", 0),
-        category_id=data.get("category_id"),
-        buy_qty=data.get("buy_qty", 0), free_qty=data.get("free_qty", 0),
-        free_discount_pct=data.get("free_discount_pct", 100),
-        time_start=data.get("time_start", ""), time_end=data.get("time_end", ""),
-        days_of_week=data.get("days_of_week", ""),
-        start_date=datetime.fromisoformat(data["start_date"]) if data.get("start_date") else None,
-        end_date=datetime.fromisoformat(data["end_date"]) if data.get("end_date") else None,
-        is_active=data.get("is_active", True),
-        branch_id=data.get("branch_id"), description=data.get("description", ""),
+        name=data.name, type=data.type, value=data.value,
+        min_order=data.min_order,
+        category_id=data.category_id,
+        buy_qty=data.buy_qty, free_qty=data.free_qty,
+        free_discount_pct=data.free_discount_pct,
+        time_start=data.time_start, time_end=data.time_end,
+        days_of_week=data.days_of_week,
+        start_date=datetime.fromisoformat(data.start_date) if data.start_date else None,
+        end_date=datetime.fromisoformat(data.end_date) if data.end_date else None,
+        is_active=data.is_active,
+        branch_id=data.branch_id, description=data.description,
     )
     db.add(promo)
     db.commit()
@@ -41,19 +42,20 @@ def create_promotion(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/{promo_id}")
-def update_promotion(promo_id: int, data: dict, db: Session = Depends(get_db)):
+def update_promotion(promo_id: int, data: UpdatePromotion, db: Session = Depends(get_db)):
     promo = db.query(Promotion).filter(Promotion.id == promo_id).first()
     if not promo:
         raise HTTPException(404, "Promotion not found")
+    update_data = data.model_dump(exclude_unset=True)
     for key in ("name", "type", "value", "min_order", "is_active", "branch_id",
                 "description", "category_id", "buy_qty", "free_qty",
                 "free_discount_pct", "time_start", "time_end", "days_of_week"):
-        if key in data:
-            setattr(promo, key, data[key])
-    if "start_date" in data:
-        promo.start_date = datetime.fromisoformat(data["start_date"]) if data["start_date"] else None
-    if "end_date" in data:
-        promo.end_date = datetime.fromisoformat(data["end_date"]) if data["end_date"] else None
+        if key in update_data:
+            setattr(promo, key, update_data[key])
+    if "start_date" in update_data:
+        promo.start_date = datetime.fromisoformat(update_data["start_date"]) if update_data["start_date"] else None
+    if "end_date" in update_data:
+        promo.end_date = datetime.fromisoformat(update_data["end_date"]) if update_data["end_date"] else None
     db.commit()
     db.refresh(promo)
     return promo
@@ -70,10 +72,10 @@ def delete_promotion(promo_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/calculate")
-def calculate_promotion(data: dict, db: Session = Depends(get_db)):
-    branch_id = data.get("branch_id")
-    cart_items = data.get("items", [])
-    total = data.get("total", 0)
+def calculate_promotion(data: CalculatePromotion, db: Session = Depends(get_db)):
+    branch_id = data.branch_id
+    cart_items = data.items
+    total = data.total
     now = datetime.now()
     weekday = str(now.weekday())
     time_str = now.strftime("%H:%M")
@@ -99,7 +101,7 @@ def calculate_promotion(data: dict, db: Session = Depends(get_db)):
                 days = json.loads(promo.days_of_week) if isinstance(promo.days_of_week, str) else promo.days_of_week
                 if weekday not in [str(d) for d in days] and weekday not in days:
                     continue
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
         if promo.time_start and promo.time_end:

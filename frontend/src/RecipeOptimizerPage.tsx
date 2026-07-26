@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function RecipeOptimizerPage({ onNotify }: { onNotify: (m: string) => void }) {
   const [data, setData] = useState<any>(null)
@@ -8,7 +9,7 @@ export default function RecipeOptimizerPage({ onNotify }: { onNotify: (m: string
   const [filter, setFilter] = useState('all')
 
   useEffect(() => {
-    fetch('/api/v1/analytics/recipe-optimizer', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    fetch('/api/v1/analytics/recipe-optimizer', { headers: api.authHeader() })
       .then(r => r.json()).then(setData)
   }, [])
 

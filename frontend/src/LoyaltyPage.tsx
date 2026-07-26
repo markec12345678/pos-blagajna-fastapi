@@ -11,7 +11,7 @@ export default function LoyaltyPage({ onNotify }: { onNotify: (msg: string) => v
   const [adjNote, setAdjNote] = useState('')
 
   const loadMembers = async () => {
-    try { const r = await fetch('/api/v1/loyalty', { headers: api.authHeader() }).then(r => r.json()); setMembers(r) } catch {}
+    try { const r = await fetch('/api/v1/loyalty', { headers: api.authHeader() }).then(r => r.json()); setMembers(r) } catch { onNotify('Napaka pri nalaganju članov') }
   }
 
   const loadSettings = async () => {
@@ -25,7 +25,7 @@ export default function LoyaltyPage({ onNotify }: { onNotify: (msg: string) => v
       const r = await fetch(`/api/v1/loyalty/${id}`, { headers: api.authHeader() }).then(r => r.json())
       setSelected(r)
       setHistory(r.history || [])
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju podrobnosti') }
   }
 
   const saveSettings = async () => {

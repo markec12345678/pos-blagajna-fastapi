@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function BulkPriceEditor({ onNotify }: { onNotify: (msg: string) => void }) {
   const [items, setItems] = useState<any[]>([])
@@ -15,7 +16,7 @@ export default function BulkPriceEditor({ onNotify }: { onNotify: (msg: string) 
   const [bulkCat, setBulkCat] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const h = { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+  const h = api.authHeader()
 
   const load = async () => {
     setLoading(true)

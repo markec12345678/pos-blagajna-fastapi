@@ -7,7 +7,7 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
     amount = Column(Float, nullable=False)
     method = Column(String, nullable=False)
     tip = Column(Float, default=0)

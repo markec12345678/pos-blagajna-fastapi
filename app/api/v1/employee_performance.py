@@ -17,15 +17,39 @@ def employee_performance(days: int = 30, branch_id: int = 0, db: Session = Depen
     if branch_id:
         users_q = users_q.filter(User.branch_id == branch_id)
     users = users_q.all()
+    user_ids = [u.id for u in users]
+
+    # Batch-load all closed/paid orders for all users
+    all_orders = db.query(Order).filter(
+        Order.cashier_id.in_(user_ids),
+        Order.created_at >= since,
+        Order.status.in_(["closed", "paid"])
+    ).all() if user_ids else []
+    orders_by_user: dict[int, list] = {}
+    for o in all_orders:
+        orders_by_user.setdefault(o.cashier_id, []).append(o)
+
+    # Batch-load all order items for all orders
+    order_ids = [o.id for o in all_orders]
+    all_order_items = db.query(sa_func.sum(OrderItem.quantity), Order.cashier_id).join(Order).filter(
+        Order.id.in_(order_ids)
+    ).group_by(Order.cashier_id).all() if order_ids else []
+    items_by_user = {r[1]: r[0] or 0 for r in all_order_items}
+
+    # Batch-load all shifts for all users
+    all_shifts = db.query(EmployeeShift).filter(
+        EmployeeShift.user_id.in_(user_ids),
+        EmployeeShift.clock_in >= since,
+        EmployeeShift.clock_out != None
+    ).all() if user_ids else []
+    shifts_by_user: dict[int, list] = {}
+    for s in all_shifts:
+        shifts_by_user.setdefault(s.user_id, []).append(s)
 
     result = []
     for u in users:
-        orders_q = db.query(Order).filter(
-            Order.cashier_id == u.id,
-            Order.created_at >= since,
-            Order.status.in_(["closed", "paid"])
-        )
-        total_orders = orders_q.count()
+        user_orders = orders_by_user.get(u.id, [])
+        total_orders = len(user_orders)
         if total_orders == 0:
             result.append({
                 "user_id": u.id, "name": u.full_name, "role": u.role,
@@ -34,24 +58,10 @@ def employee_performance(days: int = 30, branch_id: int = 0, db: Session = Depen
             })
             continue
 
-        revenue = db.query(sa_func.sum(Order.total)).filter(
-            Order.cashier_id == u.id,
-            Order.created_at >= since,
-            Order.status.in_(["closed", "paid"])
-        ).scalar() or 0
-
-        items_count = db.query(sa_func.sum(OrderItem.quantity)).join(Order).filter(
-            Order.cashier_id == u.id,
-            Order.created_at >= since,
-            Order.status.in_(["closed", "paid"])
-        ).scalar() or 0
-
-        shifts = db.query(EmployeeShift).filter(
-            EmployeeShift.user_id == u.id,
-            EmployeeShift.clock_in >= since,
-            EmployeeShift.clock_out != None
-        ).all()
-        hours = sum((s.clock_out - s.clock_in).total_seconds() / 3600 for s in shifts if s.clock_out)
+        revenue = sum(o.total or 0 for o in user_orders)
+        items_count = items_by_user.get(u.id, 0)
+        user_shifts = shifts_by_user.get(u.id, [])
+        hours = sum((s.clock_out - s.clock_in).total_seconds() / 3600 for s in user_shifts if s.clock_out)
 
         result.append({
             "user_id": u.id, "name": u.full_name, "role": u.role,

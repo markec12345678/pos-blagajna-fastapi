@@ -57,6 +57,48 @@ export default function SettingsPage({ onNotify }: { onNotify: (msg: string) => 
       </div>
 
       <div className="card settings-card">
+        <h4>📨 e-Računi (FURS)</h4>
+        <div className="settings-section">
+          <div className="settings-field">
+            <label>Davčna številka podjetja</label>
+            <input className="input" value={s.company_tax_id || ''} onChange={e => set('company_tax_id', e.target.value)} placeholder="npr. SI12345678" />
+          </div>
+          <div className="settings-field">
+            <label>Ime podjetja</label>
+            <input className="input" value={s.company_name || ''} onChange={e => set('company_name', e.target.value)} />
+          </div>
+          <div className="settings-field">
+            <label>Naslov podjetja</label>
+            <input className="input" value={s.company_address || ''} onChange={e => set('company_address', e.target.value)} />
+          </div>
+        </div>
+        <div className="settings-row" style={{ marginTop: 8 }}>
+          <div className="settings-field">
+            <label>FURS zasebni ključ ID (za e-podpis)</label>
+            <input className="input" value={s.furs_private_key_id || ''} onChange={e => set('furs_private_key_id', e.target.value)} placeholder="Identifikator ključa" />
+          </div>
+          <div className="settings-field">
+            <label>Način pošiljanja</label>
+            <select className="input" value={s.furs_send_mode || 'simulated'} onChange={e => set('furs_send_mode', e.target.value)}>
+              <option value="simulated">Simulirano (testno)</option>
+              <option value="edavki">eDavki API</option>
+              <option value="third_party">Tretja stran</option>
+            </select>
+          </div>
+        </div>
+        <div className="settings-row" style={{ marginTop: 8 }}>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.furs_auto_send === 'true'} onChange={e => set('furs_auto_send', String(e.target.checked))} />
+            Samodejno pošlji e-Račun ob izdaji računa
+          </label>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.furs_require_vat_id === 'true'} onChange={e => set('furs_require_vat_id', String(e.target.checked))} />
+            Zahtevaj davčno številko kupca
+          </label>
+        </div>
+      </div>
+
+      <div className="card settings-card">
         <h4>Denar</h4>
         <div className="settings-row">
           <div className="settings-field">
@@ -109,6 +151,36 @@ export default function SettingsPage({ onNotify }: { onNotify: (msg: string) => 
           <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
             <input type="checkbox" checked={s.receipt_show_qr !== 'false'} onChange={e => set('receipt_show_qr', String(e.target.checked))} />
             Prikaži QR kodo
+          </label>
+        </div>
+        <div className="settings-row">
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.receipt_show_tax !== 'false'} onChange={e => set('receipt_show_tax', String(e.target.checked))} />
+            Prikaži DDV
+          </label>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.receipt_show_order_type !== 'false'} onChange={e => set('receipt_show_order_type', String(e.target.checked))} />
+            Prikaži tip naročila
+          </label>
+        </div>
+        <div className="settings-row">
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.receipt_show_customer !== 'false'} onChange={e => set('receipt_show_customer', String(e.target.checked))} />
+            Prikaži ime gosta
+          </label>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.receipt_show_notes !== 'false'} onChange={e => set('receipt_show_notes', String(e.target.checked))} />
+            Prikaži opombe
+          </label>
+        </div>
+        <div className="settings-row">
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.receipt_show_cashier !== 'false'} onChange={e => set('receipt_show_cashier', String(e.target.checked))} />
+            Prikaži blagajnika
+          </label>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={s.receipt_show_change !== 'false'} onChange={e => set('receipt_show_change', String(e.target.checked))} />
+            Prikaži vračilo
           </label>
         </div>
         <div style={{ marginTop: 8 }}>
@@ -276,6 +348,16 @@ export default function SettingsPage({ onNotify }: { onNotify: (msg: string) => 
           <input type="checkbox" checked={s.auto_print_kitchen === 'true'} onChange={e => setS((p: any) => ({ ...p, auto_print_kitchen: String(e.target.checked) }))} />{' '}
           Samodejno tiskaj v kuhinjo
         </label>
+        {s.printer_ip && (
+          <button className="btn btn-sm btn-primary" style={{ marginTop: 12 }} onClick={async () => {
+            try {
+              const token = localStorage.getItem('pos_token')
+              const r = await fetch(`/api/v1/printer/test?ip=${s.printer_ip}&port=9100`, { headers: token ? { 'Authorization': `Bearer ${token}` } : {} })
+              if (r.ok) { const d = await r.json(); onNotify(`Testno sporočilo poslano na ${d.printer} (${d.bytes} bajtov)`) }
+              else { const e = await r.json(); onNotify(`Napaka: ${e.detail || 'Neznana napaka'}`) }
+            } catch { onNotify('Napaka pri pošiljanju na tiskalnik') }
+          }}>🖨️ Testni tisk</button>
+        )}
       </div>
 
       <div className="card settings-card">
@@ -299,6 +381,42 @@ export default function SettingsPage({ onNotify }: { onNotify: (msg: string) => 
         {s.smtp_host && (
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--green)' }}>✅ Terminal klavzule so shranjene</div>
         )}
+      </div>
+
+      <div className="card settings-card">
+        <h4>📦 Zaloge in naročanje</h4>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+          Nastavitve za opozorila o nizki zalogi in samodejno odštevanje sestavin.
+        </p>
+        <div className="settings-section">
+          <div className="settings-field">
+            <label>Prag za opozorilo nizke zaloge (%)</label>
+            <input className="input" type="number" min="0" max="100" value={s.low_stock_alert_pct || '20'}
+              onChange={e => set('low_stock_alert_pct', e.target.value)}
+              placeholder="20" style={{ width: 120 }} />
+            <span style={{ fontSize: 11, color: 'var(--text2)', marginLeft: 8 }}>Opozori, ko zaloga pade pod toliko % min. zaloge</span>
+          </div>
+          <div className="settings-field">
+            <label>Odštevanje sestavin ob</label>
+            <select className="input" value={s.stock_deduct_on || 'payment'} onChange={e => set('stock_deduct_on', e.target.value)} style={{ width: 200 }}>
+              <option value="payment">Plačilu (zaprtje naročila)</option>
+              <option value="order">Ustvarjanju naročila</option>
+              <option value="kitchen">Poslanju v kuhinjo</option>
+            </select>
+          </div>
+        </div>
+        <label style={{ fontSize: 13, marginTop: 8, display: 'block' }}>
+          <input type="checkbox" checked={s.stock_alert_pos === 'true'} onChange={e => setS((p: any) => ({ ...p, stock_alert_pos: String(e.target.checked) }))} />{' '}
+          Prikaži opozorilo za nizko zalogo v POS ob naročanju
+        </label>
+        <label style={{ fontSize: 13, display: 'block' }}>
+          <input type="checkbox" checked={s.stock_alert_kds === 'true'} onChange={e => setS((p: any) => ({ ...p, stock_alert_kds: String(e.target.checked) }))} />{' '}
+          Pošlji opozorilo v KDS ob padcu zaloge
+        </label>
+        <label style={{ fontSize: 13, display: 'block' }}>
+          <input type="checkbox" checked={s.stock_deduct_enabled === 'true'} onChange={e => setS((p: any) => ({ ...p, stock_deduct_enabled: String(e.target.checked) }))} />{' '}
+          Omogoči samodejno odštevanje sestavin iz zaloge
+        </label>
       </div>
 
       <button onClick={save} className="btn btn-primary settings-save">Shrani nastavitve</button>

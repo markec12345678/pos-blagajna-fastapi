@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.settings import Setting
 from app.models.expense import Expense
 from app.models.reservation import Reservation
+from app.schemas.analytics import UpdateSalesTargets
 from datetime import datetime, timedelta, date, time
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -20,24 +21,24 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/sales/daily")
 def daily_sales(days: int = 7, branch_id: int = 0, db: Session = Depends(get_db)):
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    since = today - timedelta(days=days - 1)
+    next_day = today + timedelta(days=1)
+    q = db.query(
+        func.date(Payment.created_at).label('day'),
+        func.coalesce(func.sum(Payment.amount), 0).label('sales'),
+        func.count(Payment.id).label('orders')
+    ).filter(Payment.created_at >= since, Payment.created_at < next_day)
+    if branch_id:
+        q = q.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
+    rows = q.group_by('day').all()
+    sales_by_day = {str(r.day): (float(r.sales), r.orders) for r in rows}
     results = []
     for i in range(days - 1, -1, -1):
-        day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
-        next_day = day + timedelta(days=1)
-        pq = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-            Payment.created_at >= day, Payment.created_at < next_day
-        )
-        cq = db.query(func.count(Payment.id)).filter(
-            Payment.created_at >= day, Payment.created_at < next_day
-        )
-        if branch_id:
-            pq = pq.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
-            cq = cq.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
-        results.append({
-            "date": day.strftime("%Y-%m-%d"),
-            "sales": float(pq.scalar()),
-            "orders": cq.scalar()
-        })
+        day = today - timedelta(days=i)
+        day_str = day.strftime("%Y-%m-%d")
+        s = sales_by_day.get(day_str, (0, 0))
+        results.append({"date": day_str, "sales": s[0], "orders": s[1]})
     return results
 
 
@@ -162,22 +163,24 @@ def summary(branch_id: int = 0, db: Session = Depends(get_db)):
 def sales_by_branch(days: int = 7, db: Session = Depends(get_db)):
     since = datetime.now() - timedelta(days=days)
     branches = db.query(Branch).all()
+
+    stats_q = db.query(
+        Order.branch_id,
+        func.coalesce(func.sum(Payment.amount), 0).label('sales'),
+        func.count(Payment.id.distinct()).label('orders'),
+        func.coalesce(func.sum(Payment.tip), 0).label('tips')
+    ).join(Order, Payment.order_id == Order.id).filter(Payment.created_at >= since)
+    stats_rows = stats_q.group_by(Order.branch_id).all()
+    stats_map = {r.branch_id: r for r in stats_rows}
+
     result = []
     for b in branches:
-        pq = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-            Payment.created_at >= since
-        ).join(Order, Payment.order_id == Order.id).filter(Order.branch_id == b.id)
-        cq = db.query(func.count(Payment.id.distinct())).filter(
-            Payment.created_at >= since
-        ).join(Order, Payment.order_id == Order.id).filter(Order.branch_id == b.id)
-        tq = db.query(func.coalesce(func.sum(Payment.tip), 0)).filter(
-            Payment.created_at >= since
-        ).join(Order, Payment.order_id == Order.id).filter(Order.branch_id == b.id)
+        s = stats_map.get(b.id)
         result.append({
             "branch_id": b.id, "branch_name": b.name,
-            "sales": float(pq.scalar()),
-            "orders": cq.scalar() or 0,
-            "tips": float(tq.scalar())
+            "sales": float(s.sales) if s else 0,
+            "orders": s.orders if s else 0,
+            "tips": float(s.tips) if s else 0
         })
     return result
 
@@ -244,18 +247,29 @@ def food_cost_analysis(branch_id: int = 0, db: Session = Depends(get_db)):
     total_cost = 0
     total_revenue = 0
 
+    item_ids = [item.id for item in items]
+    all_recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id.in_(item_ids)).all() if item_ids else []
+    ing_ids = list({r.ingredient_id for r in all_recipes})
+    all_ingredients = {i.id: i for i in db.query(Ingredient).filter(Ingredient.id.in_(ing_ids)).all()} if ing_ids else {}
+    cat_ids = list({item.category_id for item in items if item.category_id})
+    all_categories = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()} if cat_ids else {}
+    recipes_by_item: dict[int, list] = {}
+    for r in all_recipes:
+        recipes_by_item.setdefault(r.menu_item_id, []).append(r)
+
     for item in items:
-        recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id == item.id).all()
+        item_recipes = recipes_by_item.get(item.id, [])
         cost = 0
         ing_count = 0
-        for r in recipes:
-            ing = db.query(Ingredient).filter(Ingredient.id == r.ingredient_id).first()
+        for r in item_recipes:
+            ing = all_ingredients.get(r.ingredient_id)
             if ing and ing.cost_per_unit:
                 cost += r.quantity * ing.cost_per_unit
                 ing_count += 1
         margin = item.price - cost
         margin_pct = round((margin / item.price) * 100, 1) if item.price else 0
-        cat_name = db.query(Category).filter(Category.id == item.category_id).first().name if item.category_id else "?"
+        cat_obj = all_categories.get(item.category_id) if item.category_id else None
+        cat_name = cat_obj.name if cat_obj else "?"
 
         rows.append({
             "id": item.id, "name": item.name,
@@ -347,17 +361,27 @@ def menu_engineering(days: int = 30, branch_id: int = 0, db: Session = Depends(g
     avg_popularity = total_sold / max(len(items), 1)
 
     rows = []
+    item_ids = [item.id for item in items]
+    all_recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id.in_(item_ids)).all() if item_ids else []
+    ing_ids = list({r.ingredient_id for r in all_recipes})
+    all_ingredients = {i.id: i for i in db.query(Ingredient).filter(Ingredient.id.in_(ing_ids)).all()} if ing_ids else {}
+    cat_ids = list({item.category_id for item in items if item.category_id})
+    all_categories = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()} if cat_ids else {}
+    recipes_by_item: dict[int, list] = {}
+    for r in all_recipes:
+        recipes_by_item.setdefault(r.menu_item_id, []).append(r)
+
     for item in items:
         qty_sold, item_revenue = sales_map.get(item.id, (0, 0))
-        recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id == item.id).all()
+        item_recipes = recipes_by_item.get(item.id, [])
         cost = 0
-        for r in recipes:
-            ing = db.query(Ingredient).filter(Ingredient.id == r.ingredient_id).first()
+        for r in item_recipes:
+            ing = all_ingredients.get(r.ingredient_id)
             if ing and ing.cost_per_unit:
                 cost += r.quantity * ing.cost_per_unit
         margin = item.price - cost
         margin_pct = round((margin / item.price) * 100, 1) if item.price else 0
-        has_recipe = len(recipes) > 0
+        has_recipe = len(item_recipes) > 0
 
         # Classify
         is_high_margin = margin_pct >= 50 if has_recipe else True
@@ -372,7 +396,8 @@ def menu_engineering(days: int = 30, branch_id: int = 0, db: Session = Depends(g
         else:
             classification = "dog"
 
-        cat_name = db.query(Category).filter(Category.id == item.category_id).first().name if item.category_id else "?"
+        cat_obj = all_categories.get(item.category_id) if item.category_id else None
+        cat_name = cat_obj.name if cat_obj else "?"
 
         rows.append({
             "id": item.id, "name": item.name, "category": cat_name,
@@ -476,34 +501,43 @@ def labor_cost_analysis(days: int = 7, branch_id: int = 0, db: Session = Depends
 
 def _labor_daily(since: datetime, days: int, branch_id: int, db: Session) -> list:
     results = []
+    # Pre-load all shifts for the entire period
+    all_shifts = db.query(EmployeeShift).filter(
+        EmployeeShift.clock_in >= since,
+        EmployeeShift.clock_in < since + timedelta(days=days),
+        EmployeeShift.clock_out != None
+    )
+    if branch_id:
+        all_shifts = all_shifts.join(User, EmployeeShift.user_id == User.id).filter(User.branch_id == branch_id)
+    all_shifts = all_shifts.all()
+    user_ids = list({s.user_id for s in all_shifts})
+    all_users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+    # Pre-load all revenue for the period
+    rev_q = db.query(
+        func.strftime('%Y-%m-%d', Payment.created_at).label('day'),
+        func.coalesce(func.sum(Payment.amount), 0).label('total')
+    ).filter(Payment.created_at >= since, Payment.created_at < since + timedelta(days=days))
+    if branch_id:
+        rev_q = rev_q.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
+    rev_by_day = {r.day: float(r.total) for r in rev_q.group_by('day').all()}
+
     for i in range(days):
         day_start = since + timedelta(days=i)
         day_end = day_start + timedelta(days=1)
-        shifts = db.query(EmployeeShift).filter(
-            EmployeeShift.clock_in >= day_start,
-            EmployeeShift.clock_in < day_end,
-            EmployeeShift.clock_out != None
-        )
-        if branch_id:
-            shifts = shifts.join(User, EmployeeShift.user_id == User.id).filter(User.branch_id == branch_id)
-        day_shifts = shifts.all()
+        day_key = day_start.strftime("%Y-%m-%d")
+        day_shifts = [s for s in all_shifts if s.clock_in and s.clock_in >= day_start and s.clock_in < day_end]
         day_hours = 0
         day_cost = 0
         for s in day_shifts:
-            if s.clock_in and s.clock_out:
+            if s.clock_out:
                 hrs = (s.clock_out - s.clock_in).total_seconds() / 3600
-                u = db.query(User).filter(User.id == s.user_id).first()
+                u = all_users.get(s.user_id)
                 rate = u.hourly_rate if u and u.hourly_rate else 10
                 day_hours += hrs
                 day_cost += hrs * rate
-        rev = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-            Payment.created_at >= day_start, Payment.created_at < day_end
-        )
-        if branch_id:
-            rev = rev.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
-        day_rev = float(rev.scalar())
+        day_rev = rev_by_day.get(day_key, 0)
         results.append({
-            "date": day_start.strftime("%Y-%m-%d"),
+            "date": day_key,
             "hours": round(day_hours, 2),
             "labor_cost": round(day_cost, 2),
             "revenue": round(day_rev, 2),
@@ -548,13 +582,17 @@ def profit_loss(date_from: str = None, date_to: str = None, branch_id: int = 0, 
         if orders:
             oids = [o.id for o in orders]
             oitems = db.query(OrderItem).filter(OrderItem.order_id.in_(oids)).all()
+            menu_item_ids = list({oi.menu_item_id for oi in oitems if oi.menu_item_id})
+            menu_items_map = {mi.id: mi for mi in db.query(MenuItem).filter(MenuItem.id.in_(menu_item_ids)).all()} if menu_item_ids else {}
+            cat_ids = list({mi.category_id for mi in menu_items_map.values() if mi.category_id})
+            categories_map = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()} if cat_ids else {}
             for oi in oitems:
                 cost = item_cost_map.get(oi.menu_item_id, 0) * (oi.quantity or 0)
                 cogs += cost
                 if oi.menu_item_id:
-                    mi = db.query(MenuItem).filter(MenuItem.id == oi.menu_item_id).first()
+                    mi = menu_items_map.get(oi.menu_item_id)
                     if mi and mi.category_id:
-                        cn = db.query(Category.name).filter(Category.id == mi.category_id).scalar() or "?"
+                        cn = categories_map[mi.category_id].name if mi.category_id in categories_map else "?"
                         if cn not in cat_data:
                             cat_data[cn] = {"revenue": 0, "cogs": 0}
                         cat_data[cn]["revenue"] += oi.total_price or 0
@@ -618,15 +656,20 @@ def profit_loss(date_from: str = None, date_to: str = None, branch_id: int = 0, 
 @router.get("/sales-forecast")
 def sales_forecast(days: int = 90, forecast_days: int = 14, branch_id: int = 0, db: Session = Depends(get_db)):
     since = datetime.now() - timedelta(days=days)
+    next_day = since + timedelta(days=days)
+    q = db.query(
+        func.date(Payment.created_at).label('day'),
+        func.coalesce(func.sum(Payment.amount), 0).label('total')
+    ).filter(Payment.created_at >= since, Payment.created_at < next_day)
+    if branch_id:
+        q = q.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
+    rows = q.group_by('day').all()
+    sales_by_day = {str(r.day): round(float(r.total), 2) for r in rows}
     data = {}
     for i in range(days):
-        ds = since + timedelta(days=i); de = ds + timedelta(days=1)
-        q = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-            Payment.created_at >= ds, Payment.created_at < de
-        )
-        if branch_id:
-            q = q.join(Order, Payment.order_id == Order.id).filter(Order.branch_id == branch_id)
-        data[ds.strftime("%Y-%m-%d")] = {"date": ds.strftime("%Y-%m-%d"), "dow": ds.weekday(), "sales": round(float(q.scalar()), 2)}
+        ds = since + timedelta(days=i)
+        day_str = ds.strftime("%Y-%m-%d")
+        data[day_str] = {"date": day_str, "dow": ds.weekday(), "sales": sales_by_day.get(day_str, 0)}
 
     values = [v["sales"] for v in data.values()]
     n = len(values)
@@ -779,13 +822,18 @@ def customer_rfm(branch_id: int = 0, min_orders: int = 1, db: Session = Depends(
     # Gather order stats per customer
     from collections import defaultdict
     stats: dict[int, dict] = {}
+    cust_ids = [c.id for c in customers]
+    all_orders_q = db.query(Order).filter(
+        Order.customer_id.in_(cust_ids), Order.status == "closed"
+    )
+    if branch_id:
+        all_orders_q = all_orders_q.filter(Order.branch_id == branch_id)
+    all_orders = all_orders_q.all()
+    orders_by_customer: dict[int, list] = {}
+    for o in all_orders:
+        orders_by_customer.setdefault(o.customer_id, []).append(o)
     for c in customers:
-        oq = db.query(Order).filter(
-            Order.customer_id == c.id, Order.status == "closed"
-        )
-        if branch_id:
-            oq = oq.filter(Order.branch_id == branch_id)
-        orders = oq.order_by(Order.closed_at.desc()).all()
+        orders = sorted(orders_by_customer.get(c.id, []), key=lambda o: o.closed_at or o.created_at, reverse=True)
         if len(orders) < min_orders:
             continue
         last_order = orders[0].closed_at or orders[0].created_at
@@ -971,14 +1019,24 @@ def recipe_optimizer(branch_id: int = 0, db: Session = Depends(get_db)):
         ing_by_unit[unit].append(ing)
 
     results = []
+    item_ids = [item.id for item in items]
+    all_recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id.in_(item_ids)).all() if item_ids else []
+    ing_ids = list({r.ingredient_id for r in all_recipes})
+    all_ingredients = {i.id: i for i in db.query(Ingredient).filter(Ingredient.id.in_(ing_ids)).all()} if ing_ids else {}
+    cat_ids = list({item.category_id for item in items if item.category_id})
+    all_categories = {c.id: c for c in db.query(Category).filter(Category.id.in_(cat_ids)).all()} if cat_ids else {}
+    recipes_by_item: dict[int, list] = {}
+    for r in all_recipes:
+        recipes_by_item.setdefault(r.menu_item_id, []).append(r)
+
     for item in items:
-        recipes = db.query(RecipeItem).filter(RecipeItem.menu_item_id == item.id).all()
-        if not recipes:
+        item_recipes = recipes_by_item.get(item.id, [])
+        if not item_recipes:
             continue
         current_cost = 0
         suggestions = []
-        for r in recipes:
-            ing = db.query(Ingredient).filter(Ingredient.id == r.ingredient_id).first()
+        for r in item_recipes:
+            ing = all_ingredients.get(r.ingredient_id)
             if not ing or not ing.cost_per_unit:
                 current_cost += r.quantity * 0
                 continue
@@ -1012,7 +1070,8 @@ def recipe_optimizer(branch_id: int = 0, db: Session = Depends(get_db)):
         optimized_cost = current_cost - sum(s["saving"] for s in suggestions)
         margin = item.price - current_cost
         opt_margin = item.price - optimized_cost
-        cat_name = db.query(Category).filter(Category.id == item.category_id).first().name if item.category_id else "?"
+        cat_obj = all_categories.get(item.category_id) if item.category_id else None
+        cat_name = cat_obj.name if cat_obj else "?"
         results.append({
             "id": item.id,
             "name": item.name,
@@ -1050,7 +1109,7 @@ def recipe_optimizer(branch_id: int = 0, db: Session = Depends(get_db)):
 def prep_list(date_str: str = "", branch_id: int = 0, db: Session = Depends(get_db)):
     try:
         target = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    except:
+    except (ValueError, TypeError):
         target = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     next_day = target + timedelta(days=1)
     dow = target.weekday()
@@ -1058,17 +1117,15 @@ def prep_list(date_str: str = "", branch_id: int = 0, db: Session = Depends(get_
     # Historical avg for this day of week (last 4 weeks)
     four_weeks_ago = target - timedelta(weeks=4)
     hist_items: dict[int, int] = {}
-    for i in range(4):
-        d = target - timedelta(weeks=i + 1)
-        dn = d + timedelta(days=1)
-        q = db.query(OrderItem.menu_item_id, func.sum(OrderItem.quantity)).join(Order, OrderItem.order_id == Order.id).filter(
-            Order.created_at >= d, Order.created_at < dn, Order.status == "closed"
-        )
-        if branch_id:
-            q = q.filter(Order.branch_id == branch_id)
-        rows = q.group_by(OrderItem.menu_item_id).all()
-        for item_id, qty in rows:
-            hist_items[item_id] = hist_items.get(item_id, 0) + (qty or 0)
+    hist_q = db.query(
+        OrderItem.menu_item_id, func.sum(OrderItem.quantity)
+    ).join(Order, OrderItem.order_id == Order.id).filter(
+        Order.created_at >= four_weeks_ago, Order.created_at < target, Order.status == "closed"
+    )
+    if branch_id:
+        hist_q = hist_q.filter(Order.branch_id == branch_id)
+    for item_id, qty in hist_q.group_by(OrderItem.menu_item_id).all():
+        hist_items[item_id] = qty or 0
 
     hist_avg = {k: round(v / 4) for k, v in hist_items.items()}
 
@@ -1234,7 +1291,7 @@ def sales_targets(db: Session = Depends(get_db)):
     for s in settings:
         try:
             targets[s.key] = float(s.value)
-        except:
+        except (ValueError, TypeError):
             targets[s.key] = 0
     daily_target = targets.get("daily_sales_target", 0)
     monthly_target = targets.get("monthly_sales_target", 0)
@@ -1273,15 +1330,17 @@ def sales_targets(db: Session = Depends(get_db)):
 
 
 @router.put("/sales-targets")
-def update_sales_targets(data: dict, db: Session = Depends(get_db)):
-    for key in ["daily_sales_target", "monthly_sales_target"]:
-        val = data.get(key)
-        if val is not None:
-            existing = db.query(Setting).filter(Setting.key == key).first()
-            if existing:
-                existing.value = str(val)
-            else:
-                db.add(Setting(key=key, value=str(val)))
+def update_sales_targets(data: UpdateSalesTargets, db: Session = Depends(get_db)):
+    keys_to_update = [k for k in ["daily_sales_target", "monthly_sales_target"] if getattr(data, k, None) is not None]
+    if keys_to_update:
+        existing_settings = {s.key: s for s in db.query(Setting).filter(Setting.key.in_(keys_to_update)).all()}
+        for key in keys_to_update:
+            val = getattr(data, key, None)
+            if val is not None:
+                if key in existing_settings:
+                    existing_settings[key].value = str(val)
+                else:
+                    db.add(Setting(key=key, value=str(val)))
     db.commit()
     return {"ok": True}
 

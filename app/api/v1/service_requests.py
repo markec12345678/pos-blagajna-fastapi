@@ -23,13 +23,12 @@ def list_requests(status: str = None, db: Session = Depends(get_db)):
 
 
 @router.post("/{req_id}/ack")
-def acknowledge(req_id: int, data: dict = {}, db: Session = Depends(get_db)):
+def acknowledge(req_id: int, db: Session = Depends(get_db)):
     r = db.query(ServiceRequest).filter(ServiceRequest.id == req_id).first()
     if not r:
         raise HTTPException(404, "Not found")
     r.status = "acknowledged"
     r.acknowledged_at = datetime.now()
-    r.acknowledged_by = data.get("user_id")
     db.commit()
     return {"status": "acknowledged"}
 

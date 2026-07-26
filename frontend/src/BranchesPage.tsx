@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-
-const api = { authHeader: () => ({ 'Authorization': `Bearer ${localStorage.getItem('pos-token')||''}` }) }
+import * as api from './api'
 
 export default function BranchesPage({ onNotify }: { onNotify: (msg: string) => void }) {
   const [branches, setBranches] = useState<any[]>([])

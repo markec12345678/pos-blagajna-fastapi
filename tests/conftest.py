@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.database import Base, get_db
 from app.main import create_app
-import hashlib
+import bcrypt
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
@@ -47,7 +47,7 @@ def token(client):
     if not existing:
         user = User(
             username="admin", full_name="Admin",
-            hashed_password=hashlib.sha256("admin".encode()).hexdigest(),
+            hashed_password=bcrypt.hashpw("admin".encode(), bcrypt.gensalt()).decode(),
             role="admin", is_active=True
         )
         db.add(user)

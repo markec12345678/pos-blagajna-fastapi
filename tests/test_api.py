@@ -1,6 +1,6 @@
 """Tests for auth, menu, orders, and customer API endpoints."""
 
-import hashlib
+import bcrypt
 from app.models.user import User
 from tests.conftest import TestingSessionLocal
 
@@ -10,7 +10,7 @@ def test_auth_login(client):
     if not db.query(User).filter(User.username == "admin").first():
         db.add(User(
             username="admin", full_name="Admin",
-            hashed_password=hashlib.sha256("admin".encode()).hexdigest(),
+            hashed_password=bcrypt.hashpw("admin".encode(), bcrypt.gensalt()).decode(),
             role="admin", is_active=True
         ))
         db.commit()
@@ -139,7 +139,7 @@ def test_create_order_with_items(client, auth_header):
     r = client.post("/api/v1/orders", headers=auth_header, json={
         "table_id": table["id"],
         "customer_name": "Test",
-        "items": [{"menu_item_id": item["id"], "quantity": 2, "item_name": "Margherita", "unit_price": 8.50}],
+        "items": [{"menu_item_id": item["id"], "quantity": 2}],
         "order_type": "dine-in"
     })
     assert r.status_code == 200
@@ -159,7 +159,7 @@ def test_get_orders(client, auth_header):
     r = client.get("/api/v1/orders?status=open", headers=auth_header)
     assert r.status_code == 200
     data = r.json()
-    assert len(data) >= 1
+    assert data["total"] >= 1
 
 
 def test_close_order(client, auth_header):
@@ -169,12 +169,12 @@ def test_close_order(client, auth_header):
         "items": [], "order_type": "dine-in"
     }).json()
 
-    r = client.post(f"/api/v1/orders/{order['id']}/close", headers=auth_header, json={})
+    r = client.post(f"/api/v1/orders/{order['id']}/close", headers=auth_header)
     assert r.status_code == 200
 
     # Verify closed
     r = client.get("/api/v1/orders?status=closed", headers=auth_header)
-    ids = [o["id"] for o in r.json()]
+    ids = [o["id"] for o in r.json()["items"]]
     assert order["id"] in ids
 
 
@@ -201,8 +201,8 @@ def test_search_customers(client, auth_header):
     r = client.get("/api/v1/customers?search=Janez", headers=auth_header)
     assert r.status_code == 200
     data = r.json()
-    assert len(data) >= 1
-    assert data[0]["name"] == "Janez Novak"
+    assert data["total"] >= 1
+    assert data["items"][0]["name"] == "Janez Novak"
 
 
 def test_bulk_price_update(client, auth_header):
@@ -225,3 +225,77 @@ def test_bulk_price_update(client, auth_header):
     assert 11.0 in prices
     assert 22.0 in prices
     assert 33.0 in prices
+
+
+def test_unauthorized_access_blocks(client):
+    """Protected endpoints should return 401 without auth."""
+    r = client.get("/api/v1/users")
+    assert r.status_code == 401
+    r = client.get("/api/v1/settings")
+    assert r.status_code == 401
+    r = client.get("/api/v1/expenses")
+    assert r.status_code == 401
+
+
+def test_token_expiry(client, auth_header):
+    """Expired tokens should be rejected."""
+    import jwt
+    from app.core.config import get_settings
+    settings = get_settings()
+    expired = jwt.encode(
+        {"sub": "1", "role": "admin", "exp": 0},
+        settings.SECRET_KEY, algorithm=settings.ALGORITHM
+    )
+    r = client.get("/api/v1/users", headers={"Authorization": f"Bearer {expired}"})
+    assert r.status_code == 401
+
+
+def test_invalid_token(client):
+    """Invalid tokens should be rejected."""
+    r = client.get("/api/v1/users", headers={"Authorization": "Bearer invalidtoken123"})
+    assert r.status_code == 401
+
+
+def test_user_crud(client, auth_header):
+    """Test creating, updating, and listing users."""
+    r = client.post("/api/v1/users", headers=auth_header, json={
+        "username": "testuser", "password": "pass1234", "full_name": "Test User", "role": "waiter"
+    })
+    assert r.status_code == 200
+    uid = r.json()["id"]
+
+    r = client.get("/api/v1/users", headers=auth_header)
+    assert r.status_code == 200
+    assert len(r.json()) >= 2
+
+    r = client.put(f"/api/v1/users/{uid}", headers=auth_header, json={"role": "cashier"})
+    assert r.status_code == 200
+    assert r.json()["role"] == "cashier"
+
+    r = client.delete(f"/api/v1/users/{uid}", headers=auth_header)
+    assert r.status_code == 200
+
+
+def test_pagination_customers(client, auth_header):
+    """Test pagination response format for customers."""
+    for i in range(5):
+        client.post("/api/v1/customers", headers=auth_header, json={
+            "name": f"Customer {i}", "phone": f"+3864000000{i}"
+        })
+    r = client.get("/api/v1/customers?skip=0&limit=3", headers=auth_header)
+    assert r.status_code == 200
+    data = r.json()
+    assert "items" in data
+    assert "total" in data
+    assert data["total"] >= 5
+    assert len(data["items"]) == 3
+
+    r = client.get("/api/v1/customers?skip=3&limit=3", headers=auth_header)
+    data = r.json()
+    assert len(data["items"]) == 2
+
+
+def test_pin_validation(client):
+    """PIN login should validate PIN format."""
+    r = client.post("/api/v1/auth/pin", json={"pin": "12"})
+    assert r.status_code == 400  # too short

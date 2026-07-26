@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 const DOW = ['Pon', 'Tor', 'Sre', 'Čet', 'Pet', 'Sob', 'Ned']
 const DOW_FULL = ['Ponedeljek', 'Torek', 'Sreda', 'Četrtek', 'Petek', 'Sobota', 'Nedelja']
@@ -12,8 +13,8 @@ export default function PriceRulesPage({ onNotify }: { onNotify: (m: string) => 
 
   const load = () => {
     Promise.all([
-      fetch('/api/v1/price-rules', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json()),
-      fetch('/api/v1/menu/items?all=true', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }).then(r => r.json())
+      fetch('/api/v1/price-rules', { headers: api.authHeader() }).then(r => r.json()),
+      fetch('/api/v1/menu/items?all=true', { headers: api.authHeader() }).then(r => r.json())
     ]).then(([r, i]) => { setRules(r); setItems(i) }).catch(() => onNotify('Napaka'))
   }
 
@@ -33,9 +34,9 @@ export default function PriceRulesPage({ onNotify }: { onNotify: (m: string) => 
     }
     try {
       if (edit.id) {
-        await fetch(`/api/v1/price-rules/${edit.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: JSON.stringify(body) })
+        await fetch(`/api/v1/price-rules/${edit.id}`, { method: 'PUT', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       } else {
-        await fetch('/api/v1/price-rules', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') }, body: JSON.stringify(body) })
+        await fetch('/api/v1/price-rules', { method: 'POST', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       }
       onNotify(edit.id ? 'Posodobljeno' : 'Dodano')
       setEdit(null); load()
@@ -44,7 +45,7 @@ export default function PriceRulesPage({ onNotify }: { onNotify: (m: string) => 
 
   const remove = async (id: number) => {
     if (!confirm('Izbrišem pravilo?')) return
-    await fetch(`/api/v1/price-rules/${id}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+    await fetch(`/api/v1/price-rules/${id}`, { method: 'DELETE', headers: api.authHeader() })
     onNotify('Izbrisano'); load()
   }
 

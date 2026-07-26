@@ -1,7 +1,9 @@
 import asyncio
+import logging
 from fastapi import WebSocket
 from typing import Set
 
+logger = logging.getLogger(__name__)
 clients: Set[WebSocket] = set()
 
 
@@ -14,7 +16,9 @@ def disconnect(ws: WebSocket):
     clients.discard(ws)
 
 
-async def _broadcast(event_type: str, payload: dict = {}):
+async def _broadcast(event_type: str, payload: dict | None = None):
+    if payload is None:
+        payload = {}
     msg = {"event": event_type, "data": payload}
     dead: list[WebSocket] = []
     for ws in clients:
@@ -26,10 +30,10 @@ async def _broadcast(event_type: str, payload: dict = {}):
         clients.discard(ws)
 
 
-def broadcast(event_type: str, payload: dict = {}):
+def broadcast(event_type: str, payload: dict | None = None):
     try:
         loop = asyncio.get_running_loop()
         if loop.is_running():
             loop.create_task(_broadcast(event_type, payload))
     except RuntimeError:
-        pass
+        logger.debug("No running event loop, broadcast dropped: %s", event_type)

@@ -13,8 +13,8 @@ export default function BackupPage({ onNotify }: { onNotify: (msg: string) => vo
   const [cloudSaving, setCloudSaving] = useState(false)
 
   const load = async () => {
-    try { const r = await fetch('/api/v1/backup/list', { headers: api.authHeader() }).then(r => r.json()); setBackups(r) } catch {}
-    try { const s = await fetch('/api/v1/settings', { headers: api.authHeader() }).then(r => r.json()); setSettings(s) } catch {}
+    try { const r = await fetch('/api/v1/backup/list', { headers: api.authHeader() }).then(r => r.json()); setBackups(r) } catch { onNotify('Napaka pri nalaganju varnostnih kopij') }
+    try { const s = await fetch('/api/v1/settings', { headers: api.authHeader() }).then(r => r.json()); setSettings(s) } catch { onNotify('Napaka pri nalaganju nastavitev') }
     try { const c = await fetch('/api/v1/backup/cloud/settings', { headers: api.authHeader() }).then(r => r.json()); setCloudSettings(c) } catch {}
     try { const f = await fetch('/api/v1/backup/cloud/list', { headers: api.authHeader() }).then(r => r.json()); setCloudFiles(f) } catch {}
   }

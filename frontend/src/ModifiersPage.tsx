@@ -24,7 +24,7 @@ export default function ModifiersPage({ onNotify }: { onNotify: (m: string) => v
     try {
       const r = await fetch('/api/v1/modifiers/groups', { headers: api.authHeader() })
       setGroups(await r.json())
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju modifikatorjev') }
     try {
       const r = await fetch('/api/v1/menu', { headers: api.authHeader() })
       setItems(await r.json())

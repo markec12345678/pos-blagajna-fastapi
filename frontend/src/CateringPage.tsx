@@ -27,7 +27,7 @@ function empty(): CateringOrder {
     location: '', menu_details: '', total: 0, deposit: 0, deposit_paid: 0, status: 'inquiry', notes: '', branch_id: null }
 }
 
-export default function CateringPage({ onNotify }: { onNotify: (m: string) => void }) {
+export default function CateringPage({ onNotify }: { onNotify: (m: string, isError?: boolean) => void }) {
   const [orders, setOrders] = useState<CateringOrder[]>([])
   const [filterStatus, setFilterStatus] = useState('')
   const [edit, setEdit] = useState<CateringOrder | null>(null)
@@ -50,7 +50,7 @@ export default function CateringPage({ onNotify }: { onNotify: (m: string) => vo
       if (!r.ok) throw new Error()
       onNotify(edit.id ? 'Posodobljeno' : 'Ustvarjeno')
       setEdit(null); load()
-    } catch { alert('Napaka pri shranjevanju') }
+    } catch { onNotify('Napaka pri shranjevanju', true) }
   }
 
   const remove = async (id: number) => {

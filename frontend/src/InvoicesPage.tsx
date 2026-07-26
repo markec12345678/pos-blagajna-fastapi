@@ -17,7 +17,7 @@ const ERACUN_COLORS: Record<string, string> = { pending: '#f59e0b', sent: '#0596
 const API = '/api/v1/invoices'
 const auth = () => ({ 'Authorization': 'Bearer ' + localStorage.getItem('pos_token'), 'Content-Type': 'application/json' })
 
-export default function InvoicesPage({ onNotify }: { onNotify: (m: string) => void }) {
+export default function InvoicesPage({ onNotify, onNavigate }: { onNotify: (m: string, isError?: boolean) => void; onNavigate?: (page: any) => void }) {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [stats, setStats] = useState<any>(null)
   const [filter, setFilter] = useState('')
@@ -44,7 +44,7 @@ export default function InvoicesPage({ onNotify }: { onNotify: (m: string) => vo
       onNotify('Račun izdan!')
       setShowGenerate(false); setGenOrderId(''); setBuyerInfo({ buyer_name: '', buyer_tax_id: '', buyer_address: '' })
       load()
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { onNotify(e.message, true) }
   }
 
   const pay = async (id: number) => {
@@ -73,14 +73,17 @@ export default function InvoicesPage({ onNotify }: { onNotify: (m: string) => vo
       if (!r.ok) throw new Error('Napaka pri pošiljanju')
       onNotify('eRačun poslan!')
       load()
-    } catch { alert('Napaka pri pošiljanju eRačuna') }
+    } catch { onNotify('Napaka pri pošiljanju eRačuna', true) }
   }
 
   return (
     <div className="page">
       <div className="page-header">
         <h2>🧾 Računi (eRačun)</h2>
-        <button onClick={() => setShowGenerate(true)} className="btn btn-primary">+ Izdaj račun</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => onNavigate?.('e-invoices')} className="btn btn-sm" style={{ fontSize: 12 }}>e-Računi (FURS)</button>
+          <button onClick={() => setShowGenerate(true)} className="btn btn-primary">+ Izdaj račun</button>
+        </div>
       </div>
 
       {stats && (
@@ -132,6 +135,9 @@ export default function InvoicesPage({ onNotify }: { onNotify: (m: string) => vo
                     📨 {ERACUN_LABELS[inv.eracun_status] || inv.eracun_status}
                   </div>
                 )}
+                {(inv as any).credit_note_ref && (
+                  <span className="badge badge-red" style={{ fontSize: 10 }}>Dobropis</span>
+                )}
               </div>
             <div style={{ display: 'flex', gap: 4 }}>
               <button onClick={() => viewDetail(inv.id)} className="btn btn-sm btn-ghost" title="Podrobnosti">👁️</button>
@@ -139,7 +145,14 @@ export default function InvoicesPage({ onNotify }: { onNotify: (m: string) => vo
               {inv.status !== 'cancelled' && inv.eracun_status !== 'sent' &&
                 <button onClick={() => sendEracun(inv.id)} className="btn btn-sm btn-green" title="Pošlji eRačun">📨</button>}
               {inv.status === 'issued' && <button onClick={() => pay(inv.id)} className="btn btn-sm btn-blue">Plačan</button>}
-              {inv.status === 'issued' && <button onClick={() => cancel(inv.id)} className="btn btn-sm btn-danger">Storniraj</button>}
+              {inv.status === 'paid' && !(inv as any).credit_note_ref && (
+                <button onClick={() => {
+                  const reason = prompt('Razlog za dobropis:') || 'Storno po zahtevi kupca'
+                  fetch(`${API}/${inv.id}/credit-note`, { method: 'POST', headers: auth(), body: JSON.stringify({ reason }) })
+                    .then(r => r.json()).then(r => { if (r.detail) throw new Error(r.detail); onNotify(`Dobropis ${r.invoice_number} izdan`); load() })
+                    .catch((e: any) => onNotify(e.message, true))
+                }} className="btn btn-sm btn-danger">Dobropis</button>
+              )}
             </div>
           </div>
         ))}

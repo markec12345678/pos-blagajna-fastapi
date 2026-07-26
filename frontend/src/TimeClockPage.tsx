@@ -51,6 +51,18 @@ export default function TimeClockPage({ onNotify: notifyProp }: { onNotify?: (ms
     } catch { setStep('pin') }
   }
 
+  const handleBreak = async (action: 'start' | 'end') => {
+    if (!status?.shift_id) return
+    try {
+      const url = `/api/v1/shifts/${status.shift_id}/break-${action}`
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then(r => { if (!r.ok) throw r; return r.json() })
+      onNotify(action === 'start' ? '☕ Odmor se je začel' : `☕ Odmor končan (${r.break_minutes} min)`)
+      await loadStatus(pin)
+    } catch (e: any) {
+      try { const d = await e.json(); setError(d.detail || 'Napaka') } catch { setError('Napaka') }
+    }
+  }
+
   const timeStr = clockTime.toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' })
   const dateStr = clockTime.toLocaleDateString('sl-SI', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -79,20 +91,42 @@ export default function TimeClockPage({ onNotify: notifyProp }: { onNotify?: (ms
               </div>
               <div style={{ fontSize: 14, color: '#94a3b8' }}>
                 Danes: {status.today_hours.toFixed(1)}h
+                {status.total_break_minutes > 0 && ` • Odmor: ${status.total_break_minutes} min`}
               </div>
-              <button onClick={async () => {
-                try {
-                  const r = await fetch(`/api/v1/shifts/clock-in-pin`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pin })
-                  }).then(r => r.json())
-                  onNotify(`👋 Odjavljen: ${r.user_name} (${r.hours}h)`)
-                  await loadStatus()
-                } catch { setStep('pin'); setPin('') }
-              }} style={{
-                marginTop: 24, padding: '12px 32px', fontSize: 16, fontWeight: 600,
-                background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer'
-              }}>🔴 Odjava</button>
+              {status.on_break ? (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>☕</div>
+                  <div style={{ fontSize: 18, color: '#fbbf24', fontWeight: 600 }}>Na odmoru</div>
+                  <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
+                    Od {status.break_start ? new Date(status.break_start).toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' }) : ''}
+                  </div>
+                  <button onClick={() => handleBreak('end')} style={{
+                    marginTop: 16, padding: '12px 32px', fontSize: 16, fontWeight: 600,
+                    background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer'
+                  }}>▶️ Nazaj na delo</button>
+                </div>
+              ) : (
+                <>
+                  <button onClick={async () => {
+                    try {
+                      const r = await fetch(`/api/v1/shifts/clock-in-pin`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pin })
+                      }).then(r => r.json())
+                      onNotify(`👋 Odjavljen: ${r.user_name} (${r.hours}h)`)
+                      await loadStatus()
+                    } catch { setStep('pin'); setPin('') }
+                  }} style={{
+                    marginTop: 24, padding: '12px 32px', fontSize: 16, fontWeight: 600,
+                    background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer'
+                  }}>🔴 Odjava</button>
+                  <button onClick={() => handleBreak('start')} style={{
+                    marginTop: 12, padding: '10px 28px', fontSize: 14, fontWeight: 600,
+                    background: 'rgba(251,191,36,0.2)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)',
+                    borderRadius: 8, cursor: 'pointer'
+                  }}>☕ Odmor</button>
+                </>
+              )}
             </>
           ) : (
             <>

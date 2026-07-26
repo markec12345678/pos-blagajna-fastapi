@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface IngForecast {
   ingredient_id: number; ingredient_name: string; unit: string; category: string;
@@ -21,7 +22,7 @@ export default function InventoryForecastPage({ onNotify }: { onNotify: (msg: st
   useEffect(() => {
     setLoading(true)
     fetch(`/api/v1/analytics/inventory-forecast?forecast_days=${days}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+      headers: api.authHeader()
     }).then(r => r.json()).then(d => { setData(d); setLoading(false) })
       .catch(() => { setLoading(false); onNotify('Napaka pri napovedi zalog') })
   }, [days])

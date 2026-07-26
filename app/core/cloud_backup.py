@@ -1,6 +1,9 @@
 import os
+import logging
 from typing import Optional
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def s3_upload(local_path: str, key: str = "",
@@ -21,7 +24,7 @@ def s3_upload(local_path: str, key: str = "",
         client.upload_file(local_path, bucket, key)
         return True
     except Exception as e:
-        print(f"S3 upload error: {e}")
+        logger.error("S3 upload error: %s", e)
         return False
 
 
@@ -46,7 +49,7 @@ def s3_list(bucket: str = "", prefix: str = "",
                 "last_modified": obj["LastModified"].isoformat(),
             })
         return sorted(files, key=lambda x: x["last_modified"], reverse=True)
-    except:
+    except Exception:
         return []
 
 
@@ -65,7 +68,7 @@ def s3_download(key: str, local_path: str,
         )
         client.download_file(bucket, key, local_path)
         return True
-    except:
+    except (OSError, Exception):
         return False
 
 
@@ -83,7 +86,7 @@ def s3_delete(key: str, bucket: str = "",
         )
         client.delete_object(Bucket=bucket, Key=key)
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -110,7 +113,7 @@ def gdrive_upload(local_path: str, access_token: str = "",
                 headers=headers, files=files, timeout=30
             )
             return r.ok
-    except:
+    except Exception:
         return False
 
 
@@ -136,7 +139,7 @@ def gdrive_list(access_token: str = "", folder_id: str = "") -> list[dict]:
             }
             for f in data.get("files", [])
         ]
-    except:
+    except Exception:
         return []
 
 
@@ -153,7 +156,7 @@ def gdrive_download(file_id: str, local_path: str, access_token: str = "") -> bo
                 f.write(r.content)
             return True
         return False
-    except:
+    except Exception:
         return False
 
 
@@ -166,7 +169,7 @@ def gdrive_delete(file_id: str, access_token: str = "") -> bool:
             timeout=10
         )
         return r.ok
-    except:
+    except Exception:
         return False
 
 

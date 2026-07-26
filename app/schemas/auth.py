@@ -1,6 +1,10 @@
 from pydantic import BaseModel, ConfigDict
 
 
+class PinLogin(BaseModel):
+    pin: str = ""
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

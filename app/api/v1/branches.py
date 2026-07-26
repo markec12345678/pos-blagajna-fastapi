@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.branch import Branch
+from app.schemas.branch import BranchCreate, BranchUpdate
 
 router = APIRouter(prefix="/branches", tags=["branches"])
 
@@ -14,13 +15,13 @@ def list_branches(db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_branch(data: dict, db: Session = Depends(get_db)):
+def create_branch(data: BranchCreate, db: Session = Depends(get_db)):
     b = Branch(
-        name=data["name"],
-        address=data.get("address", ""),
-        phone=data.get("phone", ""),
-        email=data.get("email", ""),
-        is_active=data.get("is_active", True)
+        name=data.name,
+        address=data.address,
+        phone=data.phone,
+        email=data.email,
+        is_active=data.is_active
     )
     db.add(b)
     db.commit()
@@ -29,13 +30,14 @@ def create_branch(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/{branch_id}")
-def update_branch(branch_id: int, data: dict, db: Session = Depends(get_db)):
+def update_branch(branch_id: int, data: BranchUpdate, db: Session = Depends(get_db)):
     b = db.query(Branch).filter(Branch.id == branch_id).first()
     if not b:
         raise HTTPException(404, "Branch not found")
     for k in ("name", "address", "phone", "email", "is_active"):
-        if k in data:
-            setattr(b, k, data[k])
+        v = getattr(data, k)
+        if v is not None:
+            setattr(b, k, v)
     db.commit()
     return {"ok": True}
 

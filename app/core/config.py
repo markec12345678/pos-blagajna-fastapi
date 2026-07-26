@@ -2,22 +2,23 @@ from functools import lru_cache
 from typing import List
 import json
 import os
+import secrets
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env", case_sensitive=True)
+
     APP_NAME: str = "POS Restaurant"
-    DEBUG: bool = True
+    DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
     DATABASE_URL: str = "sqlite:///./pos.db"
-    SECRET_KEY: str = "pos-secret-key-change-in-production"
+    SECRET_KEY: str = secrets.token_urlsafe(48)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    PUTER_TOKEN: str = ""
 
 
 @lru_cache()

@@ -8,18 +8,22 @@ from app.models.house_account import HouseAccount, HouseAccountTransaction
 from app.models.order import Order
 from app.models.customer import Customer
 from app.api.v1.audit_log import log_action
+from app.schemas.house_account import CreateHouseAccount, UpdateHouseAccount, ChargeHouseAccount, PayHouseAccount
+from app.models.user import User
+from app.api.v1.auth import get_current_user
 
 router = APIRouter(prefix="/house-accounts", tags=["House Accounts"])
 
 
 @router.get("")
-def list_house_accounts(search: Optional[str] = None, db: Session = Depends(get_db)):
+def list_house_accounts(search: Optional[str] = None, skip: int = 0, limit: int = 50, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(HouseAccount)
     if search:
         q = q.join(Customer).filter(
             Customer.name.ilike(f"%{search}%") | Customer.phone.ilike(f"%{search}%")
         )
-    accounts = q.order_by(HouseAccount.id.desc()).all()
+    total = q.count()
+    accounts = q.order_by(HouseAccount.id.desc()).offset(skip).limit(limit).all()
     results = []
     for a in accounts:
         cust = db.query(Customer).filter(Customer.id == a.customer_id).first()
@@ -34,12 +38,12 @@ def list_house_accounts(search: Optional[str] = None, db: Session = Depends(get_
             "notes": a.notes,
             "created_at": a.created_at.isoformat() if a.created_at else "",
         })
-    return results
+    return {"items": results, "total": total}
 
 
 @router.post("")
-def create_house_account(data: dict, db: Session = Depends(get_db)):
-    customer_id = data.get("customer_id")
+def create_house_account(data: CreateHouseAccount, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    customer_id = data.customer_id
     if not customer_id:
         raise HTTPException(400, "customer_id is required")
     cust = db.query(Customer).filter(Customer.id == customer_id).first()
@@ -50,8 +54,8 @@ def create_house_account(data: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "Customer already has a house account")
     account = HouseAccount(
         customer_id=customer_id,
-        credit_limit=data.get("credit_limit", 0),
-        notes=data.get("notes", ""),
+        credit_limit=data.credit_limit,
+        notes=data.notes,
     )
     db.add(account)
     db.commit()
@@ -62,7 +66,7 @@ def create_house_account(data: dict, db: Session = Depends(get_db)):
 
 
 @router.get("/{account_id}")
-def get_house_account(account_id: int, db: Session = Depends(get_db)):
+def get_house_account(account_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     a = db.query(HouseAccount).filter(HouseAccount.id == account_id).first()
     if not a:
         raise HTTPException(404, "House account not found")
@@ -95,16 +99,17 @@ def get_house_account(account_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{account_id}")
-def update_house_account(account_id: int, data: dict, db: Session = Depends(get_db)):
+def update_house_account(account_id: int, data: UpdateHouseAccount, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     a = db.query(HouseAccount).filter(HouseAccount.id == account_id).first()
     if not a:
         raise HTTPException(404, "House account not found")
-    if "credit_limit" in data:
-        a.credit_limit = data["credit_limit"]
-    if "status" in data:
-        a.status = data["status"]
-    if "notes" in data:
-        a.notes = data["notes"]
+    update_data = data.model_dump(exclude_unset=True)
+    if "credit_limit" in update_data:
+        a.credit_limit = update_data["credit_limit"]
+    if "status" in update_data:
+        a.status = update_data["status"]
+    if "notes" in update_data:
+        a.notes = update_data["notes"]
     a.updated_at = datetime.now()
     db.commit()
     log_action(db, "house_account_updated", "house_account", account_id, details="Updated")
@@ -112,16 +117,16 @@ def update_house_account(account_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.post("/{account_id}/charge")
-def charge_house_account(account_id: int, data: dict, db: Session = Depends(get_db)):
+def charge_house_account(account_id: int, data: ChargeHouseAccount, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     a = db.query(HouseAccount).filter(HouseAccount.id == account_id).first()
     if not a:
         raise HTTPException(404, "House account not found")
     if a.status != "active":
         raise HTTPException(400, "House account is not active")
-    amount = data.get("amount", 0)
+    amount = data.amount
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
-    order_id = data.get("order_id")
+    order_id = data.order_id
     if order_id:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
@@ -133,7 +138,7 @@ def charge_house_account(account_id: int, data: dict, db: Session = Depends(get_
         order_id=order_id,
         type="charge",
         amount=amount,
-        description=data.get("description", "Charge"),
+        description=data.description,
     )
     a.balance += amount
     a.updated_at = datetime.now()
@@ -145,11 +150,11 @@ def charge_house_account(account_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.post("/{account_id}/pay")
-def pay_house_account(account_id: int, data: dict, db: Session = Depends(get_db)):
+def pay_house_account(account_id: int, data: PayHouseAccount, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     a = db.query(HouseAccount).filter(HouseAccount.id == account_id).first()
     if not a:
         raise HTTPException(404, "House account not found")
-    amount = data.get("amount", 0)
+    amount = data.amount
     if amount <= 0:
         raise HTTPException(400, "Amount must be positive")
     if amount > a.balance:
@@ -158,7 +163,7 @@ def pay_house_account(account_id: int, data: dict, db: Session = Depends(get_db)
         account_id=account_id,
         type="payment",
         amount=-amount,
-        description=data.get("description", "Payment"),
+        description=data.description,
     )
     a.balance -= amount
     a.updated_at = datetime.now()

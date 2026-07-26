@@ -5,6 +5,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from app.core.database import get_db
 from app.api.v1.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -15,7 +16,7 @@ ALLOWED = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"
 
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
     if file.content_type not in ALLOWED:
         raise HTTPException(400, f"Format ni podprt: {file.content_type}. Podprti: {', '.join(ALLOWED)}")
     ext = os.path.splitext(file.filename or "image.png")[1] or ".png"
@@ -30,7 +31,7 @@ async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_cur
 
 
 @router.get("/list")
-def list_uploads(user: dict = Depends(get_current_user)):
+def list_uploads(user: User = Depends(get_current_user)):
     files = []
     for f in sorted(UPLOAD_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         if f.is_file():
@@ -44,7 +45,7 @@ def list_uploads(user: dict = Depends(get_current_user)):
 
 
 @router.delete("/{filename}")
-def delete_upload(filename: str, user: dict = Depends(get_current_user)):
+def delete_upload(filename: str, user: User = Depends(get_current_user)):
     dest = UPLOAD_DIR / filename
     if not dest.exists():
         raise HTTPException(404, "Datoteka ne obstaja")

@@ -21,6 +21,12 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
   const [barcode, setBarcode] = useState('')
   const [barcodeScan, setBarcodeScan] = useState('')
   const [scanResult, setScanResult] = useState<any>(null)
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [batchRestock, setBatchRestock] = useState(false)
+  const [batchWaste, setBatchWaste] = useState(false)
+  const [batchQty, setBatchQty] = useState('')
+  const [batchReason, setBatchReason] = useState('Dobava')
 
   const API = '/api/v1/inventory'
 
@@ -63,6 +69,38 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
     setWasteId(null); setWasteQty(''); setWasteReason('Odpis'); load(); onNotify('Odpis zabeležen')
   }
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const doBatchRestock = async () => {
+    const qty = parseFloat(batchQty)
+    if (!qty || selectedIds.size === 0) return
+    try {
+      await fetch(`${API}/bulk/restock`, { method: 'POST', headers: { ...api.h(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [...selectedIds].map(id => ({ id, quantity: qty })) })
+      })
+      onNotify(`Dopolnjena zaloga za ${selectedIds.size} sestavin`)
+    } catch { onNotify('❌ Napaka pri paketni dopolnitvi') }
+    setBatchRestock(false); setBatchQty(''); setSelectedIds(new Set()); setBatchMode(false); load()
+  }
+
+  const doBatchWaste = async () => {
+    const qty = parseFloat(batchQty)
+    if (!qty || selectedIds.size === 0) return
+    try {
+      await fetch(`${API}/bulk/waste`, { method: 'POST', headers: { ...api.h(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [...selectedIds].map(id => ({ id, quantity: qty })), reason: batchReason || 'Odpad' })
+      })
+      onNotify(`Odpis ${selectedIds.size} sestavin zabeležen`)
+    } catch { onNotify('❌ Napaka pri odpisu') }
+    setBatchWaste(false); setBatchQty(''); setBatchReason('Odpad'); setSelectedIds(new Set()); setBatchMode(false); load()
+  }
+
   const categories = [
     { key: '', label: 'Vse' },
     { key: 'food', label: '🍕 Hrana' },
@@ -76,7 +114,18 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
     <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
       <div className="inv-header">
         <h2>📦 Zaloge</h2>
-        <button onClick={() => setShowAdd(true)} className="btn btn-sm btn-primary">+ Sestavina</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {batchMode && selectedIds.size > 0 && (
+            <>
+              <button onClick={() => setBatchRestock(true)} className="btn btn-sm btn-blue">📦 Dopolni ({selectedIds.size})</button>
+              <button onClick={() => setBatchWaste(true)} className="btn btn-sm btn-ghost" style={{ color: 'var(--red)' }}>🗑️ Odpis ({selectedIds.size})</button>
+            </>
+          )}
+          <button onClick={() => { setBatchMode(!batchMode); setSelectedIds(new Set()) }} className={`btn btn-sm ${batchMode ? 'btn-primary' : 'btn-ghost'}`}>
+            {batchMode ? '✕ Prekliči' : '☑️ Paketno'}
+          </button>
+          <button onClick={() => setShowAdd(true)} className="btn btn-sm btn-primary">+ Sestavina</button>
+        </div>
       </div>
 
       {/* Stats row */}
@@ -128,6 +177,12 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
       <div className="inv-grid">
         {ings.map(i => (
           <div key={i.id} className={`inv-card ${i.low_stock ? 'low' : ''}`}>
+            {batchMode && (
+              <label style={{ position: 'absolute', top: 8, left: 8, cursor: 'pointer', fontSize: 16, zIndex: 1 }}>
+                <input type="checkbox" checked={selectedIds.has(i.id)} onChange={() => toggleSelect(i.id)}
+                  style={{ width: 18, height: 18, accentColor: 'var(--green)' }} aria-label={`Izberi ${i.name}`} />
+              </label>
+            )}
             <div className="inv-name">{i.name}</div>
             <div className={`inv-stock ${i.low_stock ? 'low' : 'ok'}`}>{i.stock}</div>
             <div className="inv-unit">{i.unit} {i.cost_per_unit > 0 && `• ${i.cost_per_unit.toFixed(2)} €/${i.unit}`}</div>
@@ -177,8 +232,8 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
 
       {/* Add ingredient modal */}
       {showAdd && (
-        <div className="overlay">
-          <div className="modal modal-card">
+        <div className="overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal modal-card" onClick={e => e.stopPropagation()}>
             <h3>Nova sestavina</h3>
             <input className="input" placeholder="Ime" value={name} onChange={e => setName(e.target.value)} />
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -205,8 +260,8 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
 
       {/* Restock modal */}
       {restockId && (
-        <div className="overlay">
-          <div className="modal modal-card">
+        <div className="overlay" onClick={() => setRestockId(null)}>
+          <div className="modal modal-card" onClick={e => e.stopPropagation()}>
             <h3>Dopolni zalogo</h3>
             <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>
               {ings.find(i => i.id === restockId)?.name}
@@ -222,8 +277,8 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
 
       {/* Waste modal */}
       {wasteId && (
-        <div className="overlay">
-          <div className="modal modal-card">
+        <div className="overlay" onClick={() => setWasteId(null)}>
+          <div className="modal modal-card" onClick={e => e.stopPropagation()}>
             <h3>🗑️ Odpiši sestavino</h3>
             <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>
               {ings.find(i => i.id === wasteId)?.name}
@@ -233,6 +288,35 @@ export default function Inventory({ onNotify }: { onNotify: (msg: string) => voi
             <div className="modal-btns">
               <button onClick={doWaste} className="btn btn-danger">Potrdi odpis</button>
               <button onClick={() => setWasteId(null)} className="btn btn-ghost">Prekliči</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Batch restock modal */}
+      {batchRestock && (
+        <div className="overlay" onClick={() => setBatchRestock(false)}>
+          <div className="modal modal-card" onClick={e => e.stopPropagation()}>
+            <h3>📦 Paketna dopolnitev ({selectedIds.size} sestavin)</h3>
+            <input className="input" type="number" placeholder="Količina za vse" value={batchQty} onChange={e => setBatchQty(e.target.value)} autoFocus
+              onKeyDown={e => e.key === 'Enter' && doBatchRestock()} />
+            <div className="modal-btns">
+              <button onClick={doBatchRestock} className="btn btn-primary">Potrdi</button>
+              <button onClick={() => setBatchRestock(false)} className="btn btn-ghost">Prekliči</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch waste modal */}
+      {batchWaste && (
+        <div className="overlay" onClick={() => setBatchWaste(false)}>
+          <div className="modal modal-card" onClick={e => e.stopPropagation()}>
+            <h3>🗑️ Paketni odpis ({selectedIds.size} sestavin)</h3>
+            <input className="input" type="number" placeholder="Količina za vse" value={batchQty} onChange={e => setBatchQty(e.target.value)} autoFocus />
+            <input className="input" placeholder="Razlog odpisa" value={batchReason} onChange={e => setBatchReason(e.target.value)} />
+            <div className="modal-btns">
+              <button onClick={doBatchWaste} className="btn btn-danger">Potrdi odpis</button>
+              <button onClick={() => setBatchWaste(false)} className="btn btn-ghost">Prekliči</button>
             </div>
           </div>
         </div>

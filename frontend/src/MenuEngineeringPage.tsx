@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { authHeader } from './api'
 
 interface EngItem {
   id: number; name: string; category: string; price: number;
@@ -25,7 +26,7 @@ export default function MenuEngineeringPage({ onNotify }: { onNotify: (msg: stri
   const [sortAsc, setSortAsc] = useState(false)
 
   const api = () => fetch(`/api/v1/analytics/menu-engineering?days=${days}`, {
-    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+    headers: authHeader()
   })
 
   const load = () => {

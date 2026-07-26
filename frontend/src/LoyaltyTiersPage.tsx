@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 interface Tier { name: string; name_en: string; min_points: number; multiplier: number; color: string; benefits: string }
 
@@ -10,8 +11,8 @@ export default function LoyaltyTiersPage({ onNotify }: { onNotify: (m: string) =
 
   const load = async () => {
     const [custR, tierR] = await Promise.all([
-      fetch('/api/v1/loyalty/customers-with-tiers', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } }),
-      fetch('/api/v1/loyalty/tiers', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } })
+      fetch('/api/v1/loyalty/customers-with-tiers', { headers: api.authHeader() }),
+      fetch('/api/v1/loyalty/tiers', { headers: api.authHeader() })
     ])
     setCustomers(await custR.json())
     setTiers(await tierR.json())
@@ -22,7 +23,7 @@ export default function LoyaltyTiersPage({ onNotify }: { onNotify: (m: string) =
   const saveTiers = async () => {
     await fetch('/api/v1/loyalty/tiers', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ tiers: editTiers })
     })
     onNotify('Stopnje posodobljene')

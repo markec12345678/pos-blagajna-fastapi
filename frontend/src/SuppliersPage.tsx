@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import * as api from './api'
+import { useBulkSelection } from './useBulkSelection'
+import { useListNavigation } from './useListNavigation'
 
 export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) => void }) {
   const [tab, setTab] = useState<'suppliers' | 'orders'>('orders')
@@ -15,14 +17,27 @@ export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) =>
   const [receiveQtys, setReceiveQtys] = useState<Record<number, number>>({})
   const [supplierDetail, setSupplierDetail] = useState<any>(null)
   const [linkIngredient, setLinkIngredient] = useState({ ingredient_id: 0, supplier_id: 0 })
+  const bulkSuppliers = useBulkSelection(suppliers)
+  const bulkOrders = useBulkSelection(orders)
+  const suppliersNav = useListNavigation(suppliers.length, (idx) => {
+    const s = suppliers[idx]
+    if (bulkSuppliers.bulkMode) { bulkSuppliers.toggle(s.id); return }
+    if (supplierDetail?.id === s.id) { setSupplierDetail(null); return }
+    fetch(`/api/v1/suppliers/${s.id}`, { headers: api.h() }).then(r => r.json()).then(setSupplierDetail)
+  })
+  const ordersNav = useListNavigation(orders.length, (idx) => {
+    const po = orders[idx]
+    if (bulkOrders.bulkMode) { bulkOrders.toggle(po.id); return }
+    setPoDetail(poDetail === po.id ? null : po.id)
+  })
 
   const label: Record<string, string> = { pending: 'Čaka', approved: 'Odobreno', received: 'Sprejeto', cancelled: 'Preklicano' }
   const color: Record<string, string> = { pending: '#f59e0b', approved: '#3b82f6', received: '#22c55e', cancelled: '#ef4444' }
 
   const load = async () => {
-    try { setSuppliers(await api.getSuppliers()) } catch {}
+    try { setSuppliers(await api.getSuppliers()) } catch { onNotify('Napaka pri nalaganju dobaviteljev') }
     const q = statusFilter ? `?status=${statusFilter}` : ''
-    try { setOrders(await (await fetch(`/api/v1/suppliers/orders${q}`, { headers: api.h() })).json()) } catch {}
+    try { setOrders(await (await fetch(`/api/v1/suppliers/orders${q}`, { headers: api.h() })).json()) } catch { onNotify('Napaka pri nalaganju naročil') }
     try { setIngredients(await api.getIngredients()) } catch {}
   }
   useEffect(() => { load() }, [statusFilter])
@@ -49,6 +64,33 @@ export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) =>
     if (!confirm('Izbriši dobavitelja?')) return
     await fetch(`/api/v1/suppliers/${id}`, { method: 'DELETE', headers: api.h() })
     onNotify('Dobavitelj izbrisan'); load()
+  }
+
+  const handleBulkDeleteSuppliers = async () => {
+    if (!confirm(`Izbrišem ${bulkSuppliers.selectedCount} dobaviteljev?`)) return
+    try {
+      const r = await api.bulkDeleteSuppliers([...bulkSuppliers.selectedIds])
+      onNotify(`Izbrisanih ${r.deleted} dobaviteljev${r.skipped ? `, preskočenih ${r.skipped} (imajo naročila)` : ''}`)
+      bulkSuppliers.clear(); load()
+    } catch (e: any) { onNotify(e.message) }
+  }
+
+  const handleBulkPOStatus = async (status: string) => {
+    if (!confirm(`Posodobim ${bulkOrders.selectedCount} naročil na "${label[status]}"?`)) return
+    try {
+      const r = await api.bulkUpdatePOStatus([...bulkOrders.selectedIds], status)
+      onNotify(`Posodobljenih ${r.updated} naročil`)
+      bulkOrders.clear(); load()
+    } catch (e: any) { onNotify(e.message) }
+  }
+
+  const handleBulkDeletePOs = async () => {
+    if (!confirm(`Izbrišem ${bulkOrders.selectedCount} naročil?`)) return
+    try {
+      const r = await api.bulkDeletePOs([...bulkOrders.selectedIds])
+      onNotify(`Izbrisanih ${r.deleted} naročil`)
+      bulkOrders.clear(); load()
+    } catch (e: any) { onNotify(e.message) }
   }
 
   const actionPO = async (id: number, action: string) => {
@@ -90,9 +132,20 @@ export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) =>
 
       {tab === 'suppliers' ? (
         <>
-          <button onClick={() => { setShowForm(!showForm); if (!showForm) { setEditing(null); resetForm() } }} className="btn btn-primary btn-sm" style={{ marginBottom: 12 }}>
-            {showForm ? 'Zapri' : '+ Dobavitelj'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+            <button onClick={() => { setShowForm(!showForm); if (!showForm) { setEditing(null); resetForm() } }} className="btn btn-primary btn-sm">
+              {showForm ? 'Zapri' : '+ Dobavitelj'}
+            </button>
+            <button onClick={bulkSuppliers.toggleBulkMode} className="btn btn-sm" style={{ background: bulkSuppliers.bulkMode ? 'var(--amber)' : 'var(--surface2)', border: '1px solid var(--border)' }}>
+              {bulkSuppliers.bulkMode ? '✕ Prekliči' : '☑️ Paketno'}
+            </button>
+            {bulkSuppliers.bulkMode && bulkSuppliers.selectedCount > 0 && (
+              <>
+                <span style={{ fontSize: 13, color: 'var(--text2)' }}>{bulkSuppliers.selectedCount} izbranih</span>
+                <button onClick={handleBulkDeleteSuppliers} className="btn btn-sm" style={{ background: 'var(--red)', color: '#fff' }}>🗑️ Izbriši ({bulkSuppliers.selectedCount})</button>
+              </>
+            )}
+          </div>
           {showForm && (
             <div className="card mb-16" style={{ padding: 16 }}>
               <h4 style={{ margin: '0 0 8px' }}>{editing ? 'Uredi dobavitelja' : 'Nov dobavitelj'}</h4>
@@ -109,13 +162,19 @@ export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) =>
             </div>
           )}
           <div className="card">
-            {suppliers.map(s => (
-              <div key={s.id}>
-                <div className="item-row" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+            {suppliers.map((s, idx) => (
+              <div key={s.id} data-list-idx={idx}>
+                <div className="item-row" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
                   onClick={() => {
+                    if (bulkSuppliers.bulkMode) { bulkSuppliers.toggle(s.id); return }
                     if (supplierDetail?.id === s.id) { setSupplierDetail(null); return }
                     fetch(`/api/v1/suppliers/${s.id}`, { headers: api.h() }).then(r => r.json()).then(setSupplierDetail)
                   }}>
+                  {bulkSuppliers.bulkMode && (
+                    <input type="checkbox" checked={bulkSuppliers.isSelected(s.id)} onChange={() => bulkSuppliers.toggle(s.id)}
+                      onClick={e => e.stopPropagation()}
+                      style={{ width: 18, height: 18, accentColor: 'var(--blue)', flexShrink: 0 }} aria-label={`Izberi ${s.name}`} />
+                  )}
                   <div className="item-info">
                     <span className="item-name">{s.name}</span>
                     <span className="item-desc">
@@ -183,7 +242,7 @@ export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) =>
         </>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <select className="input" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width: 140 }}>
               <option value="">Vsa naročila</option>
               <option value="pending">Čakajoča</option>
@@ -202,12 +261,31 @@ export default function SuppliersPage({ onNotify }: { onNotify: (msg: string) =>
                 onNotify(`⚡ ${r.message}`); load()
               } catch { onNotify('❌ Napaka') }
             }} className="btn btn-sm btn-purple">⚡ Samodejno</button>
+            <button onClick={bulkOrders.toggleBulkMode} className="btn btn-sm" style={{ background: bulkOrders.bulkMode ? 'var(--amber)' : 'var(--surface2)', border: '1px solid var(--border)' }}>
+              {bulkOrders.bulkMode ? '✕ Prekliči' : '☑️ Paketno'}
+            </button>
+            {bulkOrders.bulkMode && bulkOrders.selectedCount > 0 && (
+              <>
+                <span style={{ fontSize: 13, color: 'var(--text2)' }}>{bulkOrders.selectedCount} izbranih</span>
+                <button onClick={() => handleBulkPOStatus('approved')} className="btn btn-sm" style={{ background: 'var(--blue)', color: '#fff' }}>✅ Odobri</button>
+                <button onClick={() => handleBulkPOStatus('cancelled')} className="btn btn-sm" style={{ background: 'var(--red)', color: '#fff' }}>✕ Prekliči</button>
+                <button onClick={handleBulkDeletePOs} className="btn btn-sm" style={{ background: 'var(--red)', color: '#fff' }}>🗑️ Izbriši</button>
+              </>
+            )}
           </div>
           <div className="card">
-            {orders.map(po => (
-              <div key={po.id}>
-                <div className="item-row" style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={() => setPoDetail(poDetail === po.id ? null : po.id)}>
+            {orders.map((po, idx) => (
+              <div key={po.id} data-list-idx={idx}>
+                <div className="item-row" style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => {
+                    if (bulkOrders.bulkMode) { bulkOrders.toggle(po.id); return }
+                    setPoDetail(poDetail === po.id ? null : po.id)
+                  }}>
+                  {bulkOrders.bulkMode && (
+                    <input type="checkbox" checked={bulkOrders.isSelected(po.id)} onChange={() => bulkOrders.toggle(po.id)}
+                      onClick={e => e.stopPropagation()}
+                      style={{ width: 18, height: 18, accentColor: 'var(--blue)', flexShrink: 0 }} aria-label={`Izberi PO #${po.id}`} />
+                  )}
                   <div className="item-info">
                     <span className="item-name">PO #{po.id} — {po.supplier_name}</span>
                     <span className="item-desc">{po.items?.length || 0} artiklov • {po.total?.toFixed(2)} €</span>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from './i18n'
+import * as api from './api'
 
 export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => void }) {
   const { t } = useTranslation()
@@ -11,7 +12,7 @@ export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => voi
   const [branches, setBranches] = useState<any[]>([])
 
   useEffect(() => {
-    fetch('/api/v1/branches', { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+    fetch('/api/v1/branches', { headers: api.authHeader() })
       .then(r => r.json()).then(setBranches).catch(() => {})
   }, [])
 
@@ -21,7 +22,7 @@ export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => voi
     if (date) params.set('date_to', date)
     if (branchId) params.set('branch_id', String(branchId))
     const r = await fetch(`/api/v1/tips/pools?${params}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      headers: api.authHeader()
     })
     if (r.ok) {
       const data = await r.json()
@@ -34,7 +35,7 @@ export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => voi
 
   const loadPoolDetail = async (id: number) => {
     const r = await fetch(`/api/v1/tips/pools/${id}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      headers: api.authHeader()
     })
     if (r.ok) setSelectedPool(await r.json())
   }
@@ -44,7 +45,7 @@ export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => voi
   const createPool = async () => {
     const r = await fetch('/api/v1/tips/pools', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ date, method, branch_id: branchId })
     })
     if (r.ok) {
@@ -60,7 +61,7 @@ export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => voi
     if (!selectedPool) return
     const r = await fetch(`/api/v1/tips/pools/${selectedPool.id}/distribute`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      headers: api.authHeader()
     })
     if (r.ok) {
       onNotify(t('tip.distribute') + ' ✅')
@@ -73,7 +74,7 @@ export default function TipPoolPage({ onNotify }: { onNotify: (m: string) => voi
     if (!selectedPool) return
     const r = await fetch(`/api/v1/tips/pools/${selectedPool.id}/pay`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     })
     if (r.ok) {

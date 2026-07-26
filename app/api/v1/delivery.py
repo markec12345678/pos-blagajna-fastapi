@@ -11,22 +11,14 @@ import json
 import hmac
 import hashlib
 from app.core.sms_service import send_whatsapp
-from app.models.settings import Setting
+from app.schemas.delivery import ReceiveDeliveryOrder, PushMenuToAggregator, UpdateDeliveryStatus
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
 
 
-def get_setting(key: str, default: str = "") -> str:
-    try:
-        db = next(iter([]))
-        return default
-    except:
-        return default
-
-
 def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
     if not secret:
-        return True
+        return False
     expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
@@ -119,23 +111,23 @@ def get_auto_accept(db: Session, aggregator: str) -> bool:
 
 
 @router.post("/webhook")
-def receive_delivery_order(data: dict, db: Session = Depends(get_db)):
-    api_key = data.get("api_key") or ""
+def receive_delivery_order(request: Request, data: ReceiveDeliveryOrder, db: Session = Depends(get_db)):
+    api_key = request.headers.get("X-API-Key") or data.api_key or ""
     stored_key = db.query(Setting).filter(Setting.key == "delivery_api_key").first()
     if stored_key and stored_key.value and api_key != stored_key.value:
         raise HTTPException(403, "Invalid API key")
 
     dobj = DeliveryOrder(
-        external_id=data.get("external_id", ""),
-        aggregator=data.get("aggregator", "unknown"),
-        customer_name=data.get("customer_name", ""),
-        customer_phone=data.get("customer_phone", ""),
-        delivery_address=data.get("delivery_address", ""),
-        items=json.dumps(data.get("items", [])),
-        total=float(data.get("total", 0)),
-        delivery_fee=float(data.get("delivery_fee", 0)),
-        service_fee=float(data.get("service_fee", 0)),
-        notes=data.get("notes", ""),
+        external_id=data.external_id or "",
+        aggregator=data.aggregator or "unknown",
+        customer_name=data.customer_name or "",
+        customer_phone=data.customer_phone or "",
+        delivery_address=data.delivery_address or "",
+        items=json.dumps([item.model_dump() for item in data.items]) if data.items else "[]",
+        total=float(data.total or 0),
+        delivery_fee=float(data.delivery_fee or 0),
+        service_fee=float(data.service_fee or 0),
+        notes=data.notes or "",
     )
     db.add(dobj)
     db.commit()
@@ -223,13 +215,20 @@ def list_delivery_orders(status: str = "", db: Session = Depends(get_db)):
 
 @router.get("/stats")
 def delivery_stats(db: Session = Depends(get_db)):
-    counts = db.query(DeliveryOrder.status).all()
-    total = len(counts)
+    from sqlalchemy import func
+
+    rows = db.query(
+        DeliveryOrder.status,
+        DeliveryOrder.aggregator,
+        func.count(DeliveryOrder.id)
+    ).group_by(DeliveryOrder.status, DeliveryOrder.aggregator).all()
+
+    total = sum(c for _, _, c in rows)
     by_status = {}
     by_aggregator = {}
-    for o in db.query(DeliveryOrder).all():
-        by_status[o.status] = by_status.get(o.status, 0) + 1
-        by_aggregator[o.aggregator] = by_aggregator.get(o.aggregator, 0) + 1
+    for status, aggregator, count in rows:
+        by_status[status] = by_status.get(status, 0) + count
+        by_aggregator[aggregator] = by_aggregator.get(aggregator, 0) + count
     return {"total": total, "by_status": by_status, "by_aggregator": by_aggregator}
 
 
@@ -286,8 +285,8 @@ def accept_delivery(delivery_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/push-menu")
-def push_menu_to_aggregator(data: dict, db: Session = Depends(get_db)):
-    aggregator = data.get("aggregator", "")
+def push_menu_to_aggregator(data: PushMenuToAggregator, db: Session = Depends(get_db)):
+    aggregator = data.aggregator or ""
     if aggregator not in ("wolt", "ubereats", "glovo"):
         raise HTTPException(400, "Unsupported aggregator")
 
@@ -307,18 +306,18 @@ def push_menu_to_aggregator(data: dict, db: Session = Depends(get_db)):
             "price": item.price,
             "category": cat_name,
             "is_active": item.is_active,
-            "image": item.image or "",
+            "image": item.image_url or "",
         })
 
     return {"ok": True, "aggregator": aggregator, "items_count": len(menu), "menu": menu}
 
 
 @router.post("/{delivery_id}/status")
-def update_delivery_status(delivery_id: int, data: dict, db: Session = Depends(get_db)):
+def update_delivery_status(delivery_id: int, data: UpdateDeliveryStatus, db: Session = Depends(get_db)):
     dobj = db.query(DeliveryOrder).filter(DeliveryOrder.id == delivery_id).first()
     if not dobj:
         raise HTTPException(404, "Delivery order not found")
-    new_status = data.get("status", "")
+    new_status = data.status or ""
     if new_status not in ("pending", "accepted", "preparing", "ready", "picked_up", "delivered", "cancelled"):
         raise HTTPException(400, f"Invalid status: {new_status}")
     dobj.status = new_status

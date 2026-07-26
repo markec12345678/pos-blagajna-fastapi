@@ -5,6 +5,7 @@ from app.models.campaign import Campaign, CampaignRecipient
 from app.models.customer import Customer
 from app.models.settings import Setting
 from app.api.v1.audit_log import log_action
+from app.schemas.marketing import PreviewSegment, CreateCampaign, UpdateCampaign, SendSmsSingle
 from datetime import datetime
 import json
 import smtplib
@@ -31,8 +32,8 @@ def _filter_customers(db: Session, sf: dict, branch_id: int = 0):
 
 
 @router.post("/preview")
-def preview_segment(data: dict, db: Session = Depends(get_db)):
-    customers = _filter_customers(db, data.get("segment_filter", {}), data.get("branch_id", 0))
+def preview_segment(data: PreviewSegment, db: Session = Depends(get_db)):
+    customers = _filter_customers(db, data.segment_filter, data.branch_id)
     return {"count": len(customers), "sample": [{"id": c.id, "name": c.name, "email": c.email, "phone": c.phone} for c in customers[:5]]}
 
 
@@ -59,39 +60,46 @@ def list_campaigns(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("/campaigns")
-def create_campaign(data: dict, db: Session = Depends(get_db)):
+def create_campaign(data: CreateCampaign, db: Session = Depends(get_db)):
     c = Campaign(
-        name=data["name"],
-        type=data.get("type", "email"),
-        subject=data.get("subject", ""),
-        content=data.get("content", ""),
+        name=data.name,
+        type=data.type,
+        subject=data.subject,
+        content=data.content,
         status="draft",
-        segment_filter=json.dumps(data.get("segment_filter", {})),
-        scheduled_at=datetime.fromisoformat(data["scheduled_at"]) if data.get("scheduled_at") else None,
-        created_by=data.get("created_by"),
-        branch_id=data.get("branch_id"),
+        segment_filter=json.dumps(data.segment_filter),
+        scheduled_at=datetime.fromisoformat(data.scheduled_at) if data.scheduled_at else None,
+        created_by=data.created_by,
+        branch_id=data.branch_id,
     )
     db.add(c)
     db.commit()
     db.refresh(c)
-    log_action("campaign", c.id, "create", f"Ustvarjena kampanja: {c.name}", db)
+    log_action(db, "create", "campaign", c.id, details=f"Ustvarjena kampanja: {c.name}")
     return {"id": c.id, "status": c.status}
 
 
 @router.put("/campaigns/{campaign_id}")
-def update_campaign(campaign_id: int, data: dict, db: Session = Depends(get_db)):
+def update_campaign(campaign_id: int, data: UpdateCampaign, db: Session = Depends(get_db)):
     c = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not c:
         raise HTTPException(404, "Campaign not found")
-    for f in ["name", "type", "subject", "content", "status"]:
-        if f in data:
-            setattr(c, f, data[f])
-    if "segment_filter" in data:
-        c.segment_filter = json.dumps(data["segment_filter"])
-    if "scheduled_at" in data:
-        c.scheduled_at = datetime.fromisoformat(data["scheduled_at"]) if data["scheduled_at"] else None
+    if data.name is not None:
+        c.name = data.name
+    if data.type is not None:
+        c.type = data.type
+    if data.subject is not None:
+        c.subject = data.subject
+    if data.content is not None:
+        c.content = data.content
+    if data.status is not None:
+        c.status = data.status
+    if data.segment_filter is not None:
+        c.segment_filter = json.dumps(data.segment_filter)
+    if data.scheduled_at is not None:
+        c.scheduled_at = datetime.fromisoformat(data.scheduled_at) if data.scheduled_at else None
     db.commit()
-    log_action("campaign", c.id, "update", f"Posodobljena kampanja: {c.name}", db)
+    log_action(db, "update", "campaign", c.id, details=f"Posodobljena kampanja: {c.name}")
     return {"id": c.id, "status": c.status}
 
 
@@ -103,7 +111,7 @@ def delete_campaign(campaign_id: int, db: Session = Depends(get_db)):
     db.query(CampaignRecipient).filter(CampaignRecipient.campaign_id == campaign_id).delete()
     db.delete(c)
     db.commit()
-    log_action("campaign", campaign_id, "delete", "Izbrisana kampanja", db)
+    log_action(db, "delete", "campaign", campaign_id, details="Izbrisana kampanja")
     return {"ok": True}
 
 
@@ -121,13 +129,16 @@ def send_campaign(campaign_id: int, db: Session = Depends(get_db)):
     c.status = "sending"
     db.commit()
 
-    smtp_host = db.query(Setting).filter(Setting.key == "smtp_host").first()
-    smtp_port = db.query(Setting).filter(Setting.key == "smtp_port").first()
-    smtp_user = db.query(Setting).filter(Setting.key == "smtp_user").first()
-    smtp_pass = db.query(Setting).filter(Setting.key == "smtp_pass").first()
-    sms_provider = db.query(Setting).filter(Setting.key == "sms_provider").first()
-    sms_api_key = db.query(Setting).filter(Setting.key == "sms_api_key").first()
-    sms_sender = db.query(Setting).filter(Setting.key == "sms_sender").first()
+    setting_keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_pass", "sms_provider", "sms_api_key", "sms_sender"]
+    settings_rows = db.query(Setting).filter(Setting.key.in_(setting_keys)).all()
+    settings = {s.key: s for s in settings_rows}
+    smtp_host = settings.get("smtp_host")
+    smtp_port = settings.get("smtp_port")
+    smtp_user = settings.get("smtp_user")
+    smtp_pass = settings.get("smtp_pass")
+    sms_provider = settings.get("sms_provider")
+    sms_api_key = settings.get("sms_api_key")
+    sms_sender = settings.get("sms_sender")
 
     sent = 0
     for cust in customers:
@@ -142,7 +153,7 @@ def send_campaign(campaign_id: int, db: Session = Depends(get_db)):
                         server.starttls()
                         server.login(smtp_user.value, smtp_pass.value)
                         server.send_message(msg)
-                except:
+                except Exception:
                     pass
             rec = CampaignRecipient(campaign_id=c.id, customer_id=cust.id, sent_at=datetime.now())
             db.add(rec)
@@ -154,7 +165,7 @@ def send_campaign(campaign_id: int, db: Session = Depends(get_db)):
                          sms_provider.value if sms_provider else "",
                          sms_api_key.value if sms_api_key else "",
                          sms_sender.value if sms_sender else "")
-            except:
+            except Exception:
                 pass
             rec = CampaignRecipient(campaign_id=c.id, customer_id=cust.id, sent_at=datetime.now())
             db.add(rec)
@@ -164,18 +175,21 @@ def send_campaign(campaign_id: int, db: Session = Depends(get_db)):
     c.status = "sent"
     c.sent_at = datetime.now()
     db.commit()
-    log_action("campaign", c.id, "send", f"Poslana kampanja: {c.name}, {sent} prejemnikov", db)
+    log_action(db, "send", "campaign", c.id, details=f"Poslana kampanja: {c.name}, {sent} prejemnikov")
     return {"sent": sent, "total": len(customers)}
 
 
 @router.post("/sms/send")
-def send_sms_single(data: dict, db: Session = Depends(get_db)):
+def send_sms_single(data: SendSmsSingle, db: Session = Depends(get_db)):
     from app.core.sms_service import send_sms as send_svc
-    sms_provider = db.query(Setting).filter(Setting.key == "sms_provider").first()
-    sms_api_key = db.query(Setting).filter(Setting.key == "sms_api_key").first()
-    sms_sender = db.query(Setting).filter(Setting.key == "sms_sender").first()
-    phone = data.get("phone", "")
-    message = data.get("message", "")
+    setting_keys = ["sms_provider", "sms_api_key", "sms_sender"]
+    settings_rows = db.query(Setting).filter(Setting.key.in_(setting_keys)).all()
+    settings = {s.key: s for s in settings_rows}
+    sms_provider = settings.get("sms_provider")
+    sms_api_key = settings.get("sms_api_key")
+    sms_sender = settings.get("sms_sender")
+    phone = data.phone
+    message = data.message
     if not phone or not message:
         raise HTTPException(400, "phone and message required")
     ok = send_svc(phone, message,
@@ -190,9 +204,11 @@ def send_sms_single(data: dict, db: Session = Depends(get_db)):
 @router.get("/campaigns/{campaign_id}/recipients")
 def list_recipients(campaign_id: int, db: Session = Depends(get_db)):
     recs = db.query(CampaignRecipient).filter(CampaignRecipient.campaign_id == campaign_id).all()
+    customer_ids = list({r.customer_id for r in recs})
+    customers = {c.id: c for c in db.query(Customer).filter(Customer.id.in_(customer_ids)).all()} if customer_ids else {}
     result = []
     for r in recs:
-        cust = db.query(Customer).filter(Customer.id == r.customer_id).first()
+        cust = customers.get(r.customer_id)
         result.append({
             "id": r.id, "customer_id": r.customer_id,
             "customer_name": cust.name if cust else "?",

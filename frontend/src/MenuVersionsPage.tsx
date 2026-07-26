@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function MenuVersionsPage({ onNotify }: { onNotify: (msg: string) => void }) {
   const [menu, setMenu] = useState<any[]>([])
@@ -27,7 +28,7 @@ export default function MenuVersionsPage({ onNotify }: { onNotify: (msg: string)
     if (!selItem || !form.price) return
     await fetch('/api/v1/menu/versions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('pos-token') },
+      headers: { ...api.authHeader(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ item_id: selItem, price: form.price, valid_from: form.valid_from || null, valid_to: form.valid_to || null })
     })
     setShowForm(false)
@@ -67,7 +68,7 @@ export default function MenuVersionsPage({ onNotify }: { onNotify: (msg: string)
                     <td>{v.valid_from ? new Date(v.valid_from).toLocaleDateString() : '—'}</td>
                     <td>{v.valid_to ? new Date(v.valid_to).toLocaleDateString() : '—'}</td>
                     <td><button onClick={async () => {
-                      await fetch(`/api/v1/menu/versions/${v.id}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('pos-token') } })
+                      await fetch(`/api/v1/menu/versions/${v.id}`, { method: 'DELETE', headers: api.authHeader() })
                       loadVersions(selItem!)
                     }} className="btn btn-xs btn-ghost">🗑️</button></td>
                   </tr>

@@ -22,8 +22,8 @@ class RecipeItem(Base):
     __tablename__ = "recipe_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=False)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=False, index=True)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     quantity = Column(Float, nullable=False)
 
 
@@ -31,9 +31,10 @@ class StockTransaction(Base):
     __tablename__ = "stock_transactions"
 
     id = Column(Integer, primary_key=True, index=True)
-    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False, index=True)
     type = Column(String, nullable=False)
     quantity = Column(Float, nullable=False)
+    reference = Column(String, nullable=True)
     note = Column(String)
     created_at = Column(DateTime, default=datetime.now)
 

@@ -6,8 +6,11 @@ from app.models.order import Order, OrderItem
 from app.models.menu_item import MenuItem
 from app.models.table_model import TableModel
 from app.models.settings import Setting
+from app.models.user import User
 from app.api.v1.audit_log import log_action
+from app.api.v1.auth import get_current_user
 from app.core.pricing import get_effective_price
+from app.schemas.order_template import CreateTemplate, UpdateTemplate, ApplyTemplate
 from datetime import datetime
 import json
 
@@ -26,13 +29,13 @@ def list_templates(db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_template(data: dict, db: Session = Depends(get_db)):
-    if not data.get("name") or not data.get("items"):
+def create_template(data: CreateTemplate, db: Session = Depends(get_db)):
+    if not data.name or not data.items:
         raise HTTPException(400, "name and items are required")
     t = OrderTemplate(
-        name=data["name"],
-        items_json=json.dumps(data["items"]),
-        category=data.get("category", ""),
+        name=data.name,
+        items_json=json.dumps(data.items),
+        category=data.category,
     )
     db.add(t)
     db.commit()
@@ -41,16 +44,17 @@ def create_template(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/{template_id}")
-def update_template(template_id: int, data: dict, db: Session = Depends(get_db)):
+def update_template(template_id: int, data: UpdateTemplate, db: Session = Depends(get_db)):
     t = db.query(OrderTemplate).filter(OrderTemplate.id == template_id).first()
     if not t:
         raise HTTPException(404, "Template not found")
-    if "name" in data:
-        t.name = data["name"]
-    if "items" in data:
-        t.items_json = json.dumps(data["items"])
-    if "category" in data:
-        t.category = data.get("category", "")
+    update_data = data.model_dump(exclude_unset=True)
+    if "name" in update_data:
+        t.name = update_data["name"]
+    if "items" in update_data:
+        t.items_json = json.dumps(update_data["items"])
+    if "category" in update_data:
+        t.category = update_data["category"]
     db.commit()
     return {"ok": True}
 
@@ -66,14 +70,12 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{template_id}/apply")
-def apply_template(template_id: int, data: dict, db: Session = Depends(get_db)):
+def apply_template(template_id: int, data: ApplyTemplate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     t = db.query(OrderTemplate).filter(OrderTemplate.id == template_id).first()
     if not t:
         raise HTTPException(404, "Template not found")
 
-    table_id = data.get("table_id")
-    if not table_id:
-        raise HTTPException(400, "table_id is required")
+    table_id = data.table_id
 
     table = db.query(TableModel).filter(TableModel.id == table_id).first()
     if not table:
@@ -85,7 +87,7 @@ def apply_template(template_id: int, data: dict, db: Session = Depends(get_db)):
     if not items_data:
         raise HTTPException(400, "Template has no items")
 
-    order_type = data.get("order_type", "dine-in")
+    order_type = data.order_type
     total = 0
     tax_total = 0
     order_items = []
@@ -129,12 +131,12 @@ def apply_template(template_id: int, data: dict, db: Session = Depends(get_db)):
     order = Order(
         table_id=table_id,
         order_type=order_type,
-        cashier_id=data.get("cashier_id", 1),
-        customer_name=data.get("customer_name", ""),
+        cashier_id=user.id,
+        customer_name=data.customer_name,
         status="open",
         total=total,
         tax_total=tax_total,
-        branch_id=data.get("branch_id"),
+        branch_id=data.branch_id,
         items=order_items
     )
     db.add(order)

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Date, ForeignKey, Text
 from datetime import datetime
 from app.core.database import Base
 
@@ -12,6 +12,7 @@ class Customer(Base):
     email = Column(String, default="")
     notes = Column(String, default="")
     tags = Column(String, default="")
+    birthday = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     loyalty_points = Column(Integer, default=0)
     total_spent = Column(Float, default=0)
@@ -19,3 +20,12 @@ class Customer(Base):
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=True)
     password_hash = Column(String, default="")
     auth_token = Column(String, default="")
+
+
+class CustomerNote(Base):
+    __tablename__ = "customer_notes"
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    note = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)

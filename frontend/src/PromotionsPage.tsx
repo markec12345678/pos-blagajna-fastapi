@@ -26,7 +26,7 @@ function emptyForm(): any {
     start_date: '', end_date: '', description: '' }
 }
 
-export default function PromotionsPage({ onNotify }: { onNotify: (msg: string) => void }) {
+export default function PromotionsPage({ onNotify }: { onNotify: (msg: string, isError?: boolean) => void }) {
   const [promos, setPromos] = useState<Promotion[]>([])
   const [cats, setCats] = useState<any[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -48,7 +48,7 @@ export default function PromotionsPage({ onNotify }: { onNotify: (msg: string) =
     }
     const url = editId ? `/api/v1/promotions/${editId}` : '/api/v1/promotions'
     const r = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { ...api.authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (!r.ok) { const e = await r.json(); alert(e.detail || 'Napaka'); return }
+    if (!r.ok) { const e = await r.json(); onNotify(e.detail || 'Napaka', true); return }
     onNotify(editId ? 'Posodobljeno' : 'Ustvarjeno')
     setShowForm(false); setEditId(null); setForm(emptyForm()); load()
   }

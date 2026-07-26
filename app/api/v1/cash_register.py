@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.cash_register import CashRegister, CashMovement
 from app.models.payment import Payment
+from app.schemas.cash_register import OpenRegister, CloseRegister, AddMovement
 from datetime import datetime
 
 router = APIRouter(prefix="/cash-register", tags=["cash_register"])
@@ -47,13 +48,13 @@ def get_register_status(db: Session = Depends(get_db)):
 
 
 @router.post("/open")
-def open_register(data: dict, db: Session = Depends(get_db)):
+def open_register(data: OpenRegister, db: Session = Depends(get_db)):
     active = db.query(CashRegister).filter(CashRegister.status == "open").first()
     if active:
         raise HTTPException(400, "Register already open")
     reg = CashRegister(
-        opened_by=data.get("user_id", 1),
-        opening_balance=data.get("balance", 100),
+        opened_by=data.user_id,
+        opening_balance=data.balance,
         status="open"
     )
     db.add(reg)
@@ -62,11 +63,11 @@ def open_register(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/close")
-def close_register(data: dict, db: Session = Depends(get_db)):
+def close_register(data: CloseRegister, db: Session = Depends(get_db)):
     active = db.query(CashRegister).filter(CashRegister.status == "open").first()
     if not active:
         raise HTTPException(400, "No open register")
-    closing = data.get("closing_balance", 0)
+    closing = data.closing_balance
     active.closing_balance = closing
     active.closed_at = datetime.now()
     active.status = "closed"
@@ -99,15 +100,15 @@ def close_register(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/movement")
-def add_movement(data: dict, db: Session = Depends(get_db)):
+def add_movement(data: AddMovement, db: Session = Depends(get_db)):
     active = db.query(CashRegister).filter(CashRegister.status == "open").first()
     if not active:
         raise HTTPException(400, "No open register")
     mov = CashMovement(
         register_id=active.id,
-        amount=abs(data.get("amount", 0)),
-        reason=data.get("reason", ""),
-        type=data.get("type", "in")
+        amount=abs(data.amount),
+        reason=data.reason,
+        type=data.type
     )
     db.add(mov)
     db.commit()

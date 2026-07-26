@@ -31,7 +31,7 @@ export default function ReservationsPage({ onNotify }: { onNotify: (msg: string)
         r = await fetch(`/api/v1/reservations${q}`, { headers: api.h() }).then(r => r.json())
       }
       setReservations(r)
-    } catch {}
+    } catch { onNotify('Napaka pri nalaganju rezervacij') }
   }
   useEffect(() => { load() }, [filter, selDate])
 

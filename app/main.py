@@ -1,12 +1,16 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.core.database import engine, SessionLocal, Base
 from app.core.config import get_settings
 from app.core.websocket_manager import connect, disconnect
-from app.api.v1 import auth, menu, tables, orders, payment, dashboard, kds, inventory, public, analytics, settings as settings_router, users, backup, audit_log, cash_register, modifiers, customers, courses, suppliers, reservations, shifts, gift_cards, branches, media, promotions, ratings, loyalty, marketing, catering, invoices, search, employee_performance, delivery, waste, export as export_router, expenses, budgets, schedule, price_rules, waitlist, order_templates, data_import, system, service_requests, tip_pool, house_accounts
+from app.api.v1 import auth, menu, tables, orders, payment, dashboard, kds, inventory, public, analytics, settings as settings_router, users, backup, audit_log, cash_register, modifiers, customers, courses, suppliers, reservations, shifts, gift_cards, branches, media, promotions, ratings, loyalty, marketing, catering, invoices, search, employee_performance, delivery, waste, export as export_router, expenses, budgets, schedule, price_rules, waitlist, order_templates, data_import, system, service_requests, tip_pool, house_accounts, ai, printer, gamification, dynamic_menu, messaging, predictive, upsell, feedback, voice, reports, table_qr, schedule_calendar, barcode, loyalty_rewards, multi_payment, employee_dashboard, global_search, notifications, inventory_analytics, feedback_qr, kds_timers, access_control, ai_menu, loyalty_realtime, supplier_auto, shift_swap, employee_perf_adv, inventory_alerts, menu_images, menu_allergens, order_tracking, receipts, schedule_templates, inventory_batch, promotion_engine, quality_control, expenses_adv, branch_management, employee_certs, reports_advanced, communication, supplier_management, kitchen_advanced, menu_engineering, customer_experience, inventory_advanced, schedule_advanced, payments_advanced, marketing_advanced, analytics_advanced, loyalty_advanced, employee_advanced, operations_advanced, finance, quality_management, crm, logistics, reports_v2, marketing_v2, employees_v2, experience, inventory_v2, schedule_v2, crm_v2, finance_v2, menu_v2, orders_v2, kds_v2, customers_v2, expenses_v2, promotions_v2, delivery_v2, warehouse_v2, reports_v3, suppliers_v2, quality_v2, employees_v3, loyalty_v2, analytics_v2, marketing_v3, reservations_v2, payments_v2, cash_v2, shifts_v2, reports_v4, promotions_v3, menu_v3, audit_v2, users_v2, tables_v2, gift_cards_v2, catering_v2, invoices_v2, ratings_v2, backup_v2, system_v2, barcode_v2, feedback_v2, branches_v2, exports_v2, media_v2, price_rules_v2, waitlist_v2, kitchen_v2, revenue_v2, reservations_v3, inventory_v3, analytics_v3, marketing_v4, customers_v3, reports_v5, finance_v3, menu_v4, quality_v3, staff_v4, delivery_v3, inventory_v4, marketing_v5, analytics_v4, crm_v3, finance_v4, menu_v5, reports_v6, customers_v4, inventory_v5, staff_v5, orders_v3, crm_v4, finance_v5, menu_v6, reports_v7, delivery_v4, loyalty_v3, schedule_v3, analytics_v5, marketing_v6, quality_v4, expenses_v3, promotions_v4, orders_v4, payments_v3, customers_v5, schedule_v4, staff_v6, inventory_v6, crm_v5, reports_v8, marketing_v7, analytics_v6, menu_v7, finance_v6
 from app.api.v1.backup import start_auto_backup
+from app.core.rate_limit import RateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.request_id import RequestIdMiddleware
 from app.models.user import User
 from app.models.category import Category
 from app.models.menu_item import MenuItem
@@ -21,6 +25,8 @@ from app.models.menu_item import CrossSellItem
 from app.models.service_request import ServiceRequest
 from app.models.tip_pool import TipPool, TipDistribution
 from app.models.house_account import HouseAccount, HouseAccountTransaction
+from app.models.gamification import Challenge, CustomerChallengeProgress, CustomerBadge, CustomerStreak
+from app.models.dynamic_menu import DynamicMenuSuggestion, MenuItemDemand, WeatherCache
 import hashlib
 from pathlib import Path
 
@@ -37,20 +43,21 @@ def seed_data():
     db.flush()
     branch_id = branch.id
 
+    from app.api.v1.auth import hash_password, hash_pin
     db.add(User(
         username="admin",
-        hashed_password=hashlib.sha256("admin".encode()).hexdigest(),
+        hashed_password=hash_password("admin"),
         full_name="Administrator",
         role="admin",
-        pin_code="1111",
+        pin_code=hash_pin("1111"),
         branch_id=branch_id
     ))
     db.add(User(
         username="cashier",
-        hashed_password=hashlib.sha256("cashier".encode()).hexdigest(),
+        hashed_password=hash_password("cashier"),
         full_name="Cashier 1",
         role="cashier",
-        pin_code="2222",
+        pin_code=hash_pin("2222"),
         branch_id=branch_id
     ))
 
@@ -250,60 +257,40 @@ def seed_data():
 
 def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
-    # Migration: add supplier_id to ingredients
+    # Auto-migration: add missing columns to all known tables
     try:
-        from sqlalchemy import inspect
+        from sqlalchemy import inspect, text
+        from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime
+        table_types = {
+            "ingredients": {"supplier_id": "INTEGER", "barcode": "VARCHAR"},
+            "menu_items": {"image_url": "VARCHAR", "tax_rate": "FLOAT DEFAULT 0", "allergens": "VARCHAR", "tags": "VARCHAR", "translations": "VARCHAR", "calories": "INTEGER", "protein": "FLOAT", "fat": "FLOAT", "carbs": "FLOAT"},
+            "orders": {"tax_total": "FLOAT DEFAULT 0", "scheduled_at": "DATETIME", "notes": "VARCHAR", "tags": "VARCHAR"},
+            "order_items": {"tax_rate": "FLOAT DEFAULT 0", "tax_amount": "FLOAT DEFAULT 0", "started_at": "DATETIME", "completed_at": "DATETIME"},
+            "customers": {"tags": "VARCHAR"},
+            "reservations": {"reminder_sent": "BOOLEAN DEFAULT 0"},
+            "purchase_orders": {"created_by": "VARCHAR", "approved_at": "DATETIME", "received_at": "DATETIME"},
+            "purchase_order_items": {"received_quantity": "FLOAT DEFAULT 0"},
+            "stock_transactions": {"reference": "VARCHAR"},
+        }
+        _valid_ident = set("abcdefghijklmnopqrstuvwxyz_0123456789")
         insp = inspect(engine)
-        cols = [c["name"] for c in insp.get_columns("ingredients")]
-        if "supplier_id" not in cols:
-            engine.execute("ALTER TABLE ingredients ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)")
-        if "barcode" not in cols:
-            engine.execute("ALTER TABLE ingredients ADD COLUMN barcode VARCHAR DEFAULT ''")
+        for table, cols in table_types.items():
+            if table not in insp.get_table_names():
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for col, typ in cols.items():
+                if col not in existing:
+                    if not all(c in _valid_ident for c in table.lower()) or not all(c in _valid_ident for c in col.lower()):
+                        continue
+                    engine.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
     except Exception:
         pass
     try:
         from sqlalchemy import inspect
         insp = inspect(engine)
-        if "price_rules" not in insp.get_table_names():
-            PriceRule.__table__.create(engine)
-    except Exception:
-        pass
-    try:
-        from sqlalchemy import inspect
-        insp = inspect(engine)
-        if "waitlist_entries" not in insp.get_table_names():
-            WaitlistEntry.__table__.create(engine)
-    except Exception:
-        pass
-    try:
-        from sqlalchemy import inspect
-        insp = inspect(engine)
-        if "order_templates" not in insp.get_table_names():
-            OrderTemplate.__table__.create(engine)
-    except Exception:
-        pass
-    try:
-        from sqlalchemy import inspect
-        insp = inspect(engine)
-        mcols = [c["name"] for c in insp.get_columns("menu_items")]
-        for col in ("calories", "protein", "fat", "carbs"):
-            if col not in mcols:
-                typ = "INTEGER" if col == "calories" else "FLOAT"
-                engine.execute(f"ALTER TABLE menu_items ADD COLUMN {col} {typ} DEFAULT NULL")
-    except Exception:
-        pass
-    try:
-        from sqlalchemy import inspect
-        insp = inspect(engine)
-        if "cross_sell_items" not in insp.get_table_names():
-            CrossSellItem.__table__.create(engine)
-    except Exception:
-        pass
-    try:
-        from sqlalchemy import inspect
-        insp = inspect(engine)
-        if "service_requests" not in insp.get_table_names():
-            ServiceRequest.__table__.create(engine)
+        for tname, model in [("price_rules", PriceRule), ("waitlist_entries", WaitlistEntry), ("order_templates", OrderTemplate), ("cross_sell_items", CrossSellItem), ("service_requests", ServiceRequest)]:
+            if tname not in insp.get_table_names():
+                model.__table__.create(engine)
     except Exception:
         pass
     try:
@@ -317,7 +304,27 @@ def create_app() -> FastAPI:
     seed_data()
 
     cfg = get_settings()
-    app = FastAPI(title=cfg.APP_NAME, version="1.0.0")
+    app = FastAPI(
+        title="POS Blagajna API",
+        version="1.0.0",
+        description="REST API za restavracijski POS sistem. Avtentikacija, menu, naročila, zaloge, plačila, analitika.",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        response_model_exclude_unset=True,
+        openapi_tags=[
+            {"name": "auth", "description": "Prijava in avtentikacija"},
+            {"name": "menu", "description": "Menu, kategorije, jedi"},
+            {"name": "orders", "description": "Naročila in postavke"},
+            {"name": "payments", "description": "Plačila in transakcije"},
+            {"name": "inventory", "description": "Skladišče in zaloge"},
+            {"name": "customers", "description": "Stranke in zvestoba"},
+            {"name": "shifts", "description": "Ure delavcev"},
+            {"name": "delivery", "description": "Dostava (Wolt, Glovo, FoodHub)"},
+            {"name": "analytics", "description": "Analitika in poročila"},
+            {"name": "system", "description": "Zdravje sistema"},
+            {"name": "settings", "description": "Nastavitve"},
+        ],
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -326,6 +333,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
+    app.add_middleware(GZipMiddleware, minimum_size=500)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestIdMiddleware)
+
+    import logging, time
+    logger = logging.getLogger("pos.access")
+
+    @app.middleware("http")
+    async def access_log(request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        elapsed = round((time.time() - start) * 1000)
+        if not request.url.path.startswith("/uploads"):
+            logger.info(
+                "%s %s %d %dms req=%s",
+                request.method, request.url.path, response.status_code, elapsed,
+                getattr(request.state, "request_id", "-"),
+            )
+        return response
 
     api_prefix = cfg.API_V1_STR
     app.include_router(auth.router, prefix=api_prefix)
@@ -374,6 +401,157 @@ def create_app() -> FastAPI:
     app.include_router(service_requests.router, prefix=api_prefix)
     app.include_router(tip_pool.router, prefix=api_prefix)
     app.include_router(house_accounts.router, prefix=api_prefix)
+    app.include_router(ai.router, prefix=api_prefix)
+    app.include_router(printer.router, prefix=api_prefix)
+    app.include_router(gamification.router, prefix=api_prefix)
+    app.include_router(dynamic_menu.router, prefix=api_prefix)
+    app.include_router(messaging.router, prefix=api_prefix)
+    app.include_router(predictive.router, prefix=api_prefix)
+    app.include_router(upsell.router, prefix=api_prefix)
+    app.include_router(feedback.router, prefix=api_prefix)
+    app.include_router(voice.router, prefix=api_prefix)
+    app.include_router(reports.router, prefix=api_prefix)
+    app.include_router(table_qr.router, prefix=api_prefix)
+    app.include_router(schedule_calendar.router, prefix=api_prefix)
+    app.include_router(barcode.router, prefix=api_prefix)
+    app.include_router(loyalty_rewards.router, prefix=api_prefix)
+    app.include_router(multi_payment.router, prefix=api_prefix)
+    app.include_router(employee_dashboard.router, prefix=api_prefix)
+    app.include_router(global_search.router, prefix=api_prefix)
+    app.include_router(notifications.router, prefix=api_prefix)
+    app.include_router(inventory_analytics.router, prefix=api_prefix)
+    app.include_router(feedback_qr.router, prefix=api_prefix)
+    app.include_router(kds_timers.router, prefix=api_prefix)
+    app.include_router(access_control.router, prefix=api_prefix)
+    app.include_router(ai_menu.router, prefix=api_prefix)
+    app.include_router(loyalty_realtime.router, prefix=api_prefix)
+    app.include_router(supplier_auto.router, prefix=api_prefix)
+    app.include_router(shift_swap.router, prefix=api_prefix)
+    app.include_router(employee_perf_adv.router, prefix=api_prefix)
+    app.include_router(inventory_alerts.router, prefix=api_prefix)
+    app.include_router(menu_images.router, prefix=api_prefix)
+    app.include_router(menu_allergens.router, prefix=api_prefix)
+    app.include_router(order_tracking.router, prefix=api_prefix)
+    app.include_router(receipts.router, prefix=api_prefix)
+    app.include_router(schedule_templates.router, prefix=api_prefix)
+    app.include_router(inventory_batch.router, prefix=api_prefix)
+    app.include_router(promotion_engine.router, prefix=api_prefix)
+    app.include_router(quality_control.router, prefix=api_prefix)
+    app.include_router(expenses_adv.router, prefix=api_prefix)
+    app.include_router(branch_management.router, prefix=api_prefix)
+    app.include_router(employee_certs.router, prefix=api_prefix)
+    app.include_router(reports_advanced.router, prefix=api_prefix)
+    app.include_router(communication.router, prefix=api_prefix)
+    app.include_router(supplier_management.router, prefix=api_prefix)
+    app.include_router(kitchen_advanced.router, prefix=api_prefix)
+    app.include_router(menu_engineering.router, prefix=api_prefix)
+    app.include_router(customer_experience.router, prefix=api_prefix)
+    app.include_router(inventory_advanced.router, prefix=api_prefix)
+    app.include_router(schedule_advanced.router, prefix=api_prefix)
+    app.include_router(payments_advanced.router, prefix=api_prefix)
+    app.include_router(marketing_advanced.router, prefix=api_prefix)
+    app.include_router(analytics_advanced.router, prefix=api_prefix)
+    app.include_router(loyalty_advanced.router, prefix=api_prefix)
+    app.include_router(employee_advanced.router, prefix=api_prefix)
+    app.include_router(operations_advanced.router, prefix=api_prefix)
+    app.include_router(finance.router, prefix=api_prefix)
+    app.include_router(quality_management.router, prefix=api_prefix)
+    app.include_router(crm.router, prefix=api_prefix)
+    app.include_router(logistics.router, prefix=api_prefix)
+    app.include_router(reports_v2.router, prefix=api_prefix)
+    app.include_router(marketing_v2.router, prefix=api_prefix)
+    app.include_router(employees_v2.router, prefix=api_prefix)
+    app.include_router(experience.router, prefix=api_prefix)
+    app.include_router(inventory_v2.router, prefix=api_prefix)
+    app.include_router(schedule_v2.router, prefix=api_prefix)
+    app.include_router(crm_v2.router, prefix=api_prefix)
+    app.include_router(finance_v2.router, prefix=api_prefix)
+    app.include_router(menu_v2.router, prefix=api_prefix)
+    app.include_router(orders_v2.router, prefix=api_prefix)
+    app.include_router(kds_v2.router, prefix=api_prefix)
+    app.include_router(customers_v2.router, prefix=api_prefix)
+    app.include_router(expenses_v2.router, prefix=api_prefix)
+    app.include_router(promotions_v2.router, prefix=api_prefix)
+    app.include_router(delivery_v2.router, prefix=api_prefix)
+    app.include_router(warehouse_v2.router, prefix=api_prefix)
+    app.include_router(reports_v3.router, prefix=api_prefix)
+    app.include_router(suppliers_v2.router, prefix=api_prefix)
+    app.include_router(quality_v2.router, prefix=api_prefix)
+    app.include_router(employees_v3.router, prefix=api_prefix)
+    app.include_router(loyalty_v2.router, prefix=api_prefix)
+    app.include_router(analytics_v2.router, prefix=api_prefix)
+    app.include_router(marketing_v3.router, prefix=api_prefix)
+    app.include_router(reservations_v2.router, prefix=api_prefix)
+    app.include_router(payments_v2.router, prefix=api_prefix)
+    app.include_router(cash_v2.router, prefix=api_prefix)
+    app.include_router(shifts_v2.router, prefix=api_prefix)
+    app.include_router(reports_v4.router, prefix=api_prefix)
+    app.include_router(promotions_v3.router, prefix=api_prefix)
+    app.include_router(menu_v3.router, prefix=api_prefix)
+    app.include_router(audit_v2.router, prefix=api_prefix)
+    app.include_router(users_v2.router, prefix=api_prefix)
+    app.include_router(tables_v2.router, prefix=api_prefix)
+    app.include_router(gift_cards_v2.router, prefix=api_prefix)
+    app.include_router(catering_v2.router, prefix=api_prefix)
+    app.include_router(invoices_v2.router, prefix=api_prefix)
+    app.include_router(ratings_v2.router, prefix=api_prefix)
+    app.include_router(backup_v2.router, prefix=api_prefix)
+    app.include_router(system_v2.router, prefix=api_prefix)
+    app.include_router(barcode_v2.router, prefix=api_prefix)
+    app.include_router(feedback_v2.router, prefix=api_prefix)
+    app.include_router(branches_v2.router, prefix=api_prefix)
+    app.include_router(exports_v2.router, prefix=api_prefix)
+    app.include_router(media_v2.router, prefix=api_prefix)
+    app.include_router(price_rules_v2.router, prefix=api_prefix)
+    app.include_router(waitlist_v2.router, prefix=api_prefix)
+    app.include_router(kitchen_v2.router, prefix=api_prefix)
+    app.include_router(revenue_v2.router, prefix=api_prefix)
+    app.include_router(reservations_v3.router, prefix=api_prefix)
+    app.include_router(inventory_v3.router, prefix=api_prefix)
+    app.include_router(analytics_v3.router, prefix=api_prefix)
+    app.include_router(marketing_v4.router, prefix=api_prefix)
+    app.include_router(customers_v3.router, prefix=api_prefix)
+    app.include_router(reports_v5.router, prefix=api_prefix)
+    app.include_router(finance_v3.router, prefix=api_prefix)
+    app.include_router(menu_v4.router, prefix=api_prefix)
+    app.include_router(quality_v3.router, prefix=api_prefix)
+    app.include_router(staff_v4.router, prefix=api_prefix)
+    app.include_router(delivery_v3.router, prefix=api_prefix)
+    app.include_router(inventory_v4.router, prefix=api_prefix)
+    app.include_router(marketing_v5.router, prefix=api_prefix)
+    app.include_router(analytics_v4.router, prefix=api_prefix)
+    app.include_router(crm_v3.router, prefix=api_prefix)
+    app.include_router(finance_v4.router, prefix=api_prefix)
+    app.include_router(menu_v5.router, prefix=api_prefix)
+    app.include_router(reports_v6.router, prefix=api_prefix)
+    app.include_router(customers_v4.router, prefix=api_prefix)
+    app.include_router(inventory_v5.router, prefix=api_prefix)
+    app.include_router(staff_v5.router, prefix=api_prefix)
+    app.include_router(orders_v3.router, prefix=api_prefix)
+    app.include_router(crm_v4.router, prefix=api_prefix)
+    app.include_router(finance_v5.router, prefix=api_prefix)
+    app.include_router(menu_v6.router, prefix=api_prefix)
+    app.include_router(reports_v7.router, prefix=api_prefix)
+    app.include_router(delivery_v4.router, prefix=api_prefix)
+    app.include_router(loyalty_v3.router, prefix=api_prefix)
+    app.include_router(schedule_v3.router, prefix=api_prefix)
+    app.include_router(analytics_v5.router, prefix=api_prefix)
+    app.include_router(marketing_v6.router, prefix=api_prefix)
+    app.include_router(quality_v4.router, prefix=api_prefix)
+    app.include_router(expenses_v3.router, prefix=api_prefix)
+    app.include_router(promotions_v4.router, prefix=api_prefix)
+    app.include_router(orders_v4.router, prefix=api_prefix)
+    app.include_router(payments_v3.router, prefix=api_prefix)
+    app.include_router(customers_v5.router, prefix=api_prefix)
+    app.include_router(schedule_v4.router, prefix=api_prefix)
+    app.include_router(staff_v6.router, prefix=api_prefix)
+    app.include_router(inventory_v6.router, prefix=api_prefix)
+    app.include_router(crm_v5.router, prefix=api_prefix)
+    app.include_router(reports_v8.router, prefix=api_prefix)
+    app.include_router(marketing_v7.router, prefix=api_prefix)
+    app.include_router(analytics_v6.router, prefix=api_prefix)
+    app.include_router(menu_v7.router, prefix=api_prefix)
+    app.include_router(finance_v6.router, prefix=api_prefix)
 
     # Mount uploads directory
     uploads_dir = Path(__file__).parent / "uploads"
@@ -434,3 +612,6 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+

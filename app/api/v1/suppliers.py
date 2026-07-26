@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import List
 from app.core.database import get_db
 from app.models.supplier import Supplier, PurchaseOrder, PurchaseOrderItem
 from app.models.inventory import Ingredient, StockTransaction
 from app.api.v1.audit_log import log_action
+from app.schemas.supplier import CreateSupplier, UpdateSupplier, CreateOrder, ApproveOrder, ReceiveOrder
 from datetime import datetime
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
@@ -20,11 +23,11 @@ def list_suppliers(branch_id: int = 0, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_supplier(data: dict, db: Session = Depends(get_db)):
-    s = Supplier(name=data["name"], contact=data.get("contact", ""),
-                 phone=data.get("phone", ""), email=data.get("email", ""),
-                 address=data.get("address", ""), notes=data.get("notes", ""),
-                 branch_id=data.get("branch_id"))
+def create_supplier(data: CreateSupplier, db: Session = Depends(get_db)):
+    s = Supplier(name=data.name, contact=data.contact,
+                 phone=data.phone, email=data.email,
+                 address=data.address, notes=data.notes,
+                 branch_id=data.branch_id)
     db.add(s)
     db.commit()
     db.refresh(s)
@@ -32,13 +35,13 @@ def create_supplier(data: dict, db: Session = Depends(get_db)):
 
 
 @router.put("/{supplier_id}")
-def update_supplier(supplier_id: int, data: dict, db: Session = Depends(get_db)):
+def update_supplier(supplier_id: int, data: UpdateSupplier, db: Session = Depends(get_db)):
     s = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not s:
         raise HTTPException(404, "Supplier not found")
-    for k in ("name", "contact", "phone", "email", "address", "notes"):
-        if k in data:
-            setattr(s, k, data[k])
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(s, k, v)
     db.commit()
     return {"ok": True}
 
@@ -93,10 +96,10 @@ def get_order(po_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/orders")
-def create_order(data: dict, db: Session = Depends(get_db)):
+def create_order(data: CreateOrder, db: Session = Depends(get_db)):
     total = 0
     items = []
-    for idata in data.get("items", []):
+    for idata in data.items:
         ing = db.query(Ingredient).filter(Ingredient.id == idata["ingredient_id"]).first()
         if not ing:
             raise HTTPException(404, f"Ingredient {idata['ingredient_id']} not found")
@@ -106,11 +109,11 @@ def create_order(data: dict, db: Session = Depends(get_db)):
         items.append(item)
         total += up * qty
     po = PurchaseOrder(
-        supplier_id=data.get("supplier_id"),
+        supplier_id=data.supplier_id,
         status="pending",
         total=round(total, 2),
-        notes=data.get("notes", ""),
-        created_by=data.get("created_by"),
+        notes=data.notes,
+        created_by=data.created_by,
         items=items
     )
     db.add(po)
@@ -123,7 +126,7 @@ def create_order(data: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/orders/{po_id}/approve")
-def approve_order(po_id: int, data: dict = {}, db: Session = Depends(get_db)):
+def approve_order(po_id: int, data: ApproveOrder = None, db: Session = Depends(get_db)):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.status == "pending").first()
     if not po:
         raise HTTPException(400, "PO not found or not pending")
@@ -135,12 +138,12 @@ def approve_order(po_id: int, data: dict = {}, db: Session = Depends(get_db)):
 
 
 @router.post("/orders/{po_id}/receive")
-def receive_order(po_id: int, data: dict = {}, db: Session = Depends(get_db)):
+def receive_order(po_id: int, data: ReceiveOrder = None, db: Session = Depends(get_db)):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.status.in_(["approved", "pending"])).first()
     if not po:
         raise HTTPException(400, "PO not found or already received/cancelled")
     items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po.id).all()
-    partials = data.get("items", None)
+    partials = data.items if data else None
     for item in items:
         ing = db.query(Ingredient).filter(Ingredient.id == item.ingredient_id).first()
         if not ing:
@@ -301,3 +304,60 @@ def supplier_ingredients(supplier_id: int, db: Session = Depends(get_db)):
 
     db.commit()
     return {"orders": created_orders, "message": f"Created {len(created_orders)} PO(s)"}
+
+
+class BulkPORequest(BaseModel):
+    ids: List[int]
+
+
+class BulkPOStatusRequest(BaseModel):
+    ids: List[int]
+    status: str
+
+
+@router.post('/orders/bulk/status')
+def bulk_update_po_status(body: BulkPOStatusRequest, db: Session = Depends(get_db)):
+    orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(body.ids)).all()
+    valid = {'pending', 'approved', 'received', 'cancelled'}
+    if body.status not in valid:
+        raise HTTPException(400, f'Invalid status. Must be one of: {chr(44).join(valid)}')
+    count = 0
+    for po in orders:
+        po.status = body.status
+        if body.status == 'received':
+            po.received_at = datetime.utcnow()
+        count += 1
+    db.commit()
+    log_action(db, 'bulk_po_status', 'purchase_order', 0,
+               details=f'Updated {count} POs to {chr(39)}' + body.status + chr(39))
+    return {'updated': count}
+
+
+@router.post('/orders/bulk/delete')
+def bulk_delete_pos(body: BulkPORequest, db: Session = Depends(get_db)):
+    orders = db.query(PurchaseOrder).filter(PurchaseOrder.id.in_(body.ids)).all()
+    count = 0
+    for po in orders:
+        if po.status == 'pending':
+            db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po.id).delete()
+            db.delete(po)
+            count += 1
+    db.commit()
+    log_action(db, 'bulk_delete_pos', 'purchase_order', 0,
+               details=f'Deleted {count} pending POs')
+    return {'deleted': count}
+
+
+@router.post('/bulk/delete')
+def bulk_delete_suppliers(body: BulkPORequest, db: Session = Depends(get_db)):
+    suppliers_q = db.query(Supplier).filter(Supplier.id.in_(body.ids)).all()
+    count = 0
+    for s in suppliers_q:
+        has_pos = db.query(PurchaseOrder).filter(PurchaseOrder.supplier_id == s.id).count()
+        if has_pos == 0:
+            db.delete(s)
+            count += 1
+    db.commit()
+    log_action(db, 'bulk_delete_suppliers', 'supplier', 0,
+               details=f'Deleted {count} suppliers')
+    return {'deleted': count, 'skipped': len(suppliers_q) - count}

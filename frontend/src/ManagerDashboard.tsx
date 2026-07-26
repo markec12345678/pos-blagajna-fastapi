@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import * as api from './api'
 
 export default function ManagerDashboard({ onNotify }: { onNotify?: (msg: string, err?: boolean) => void }) {
   const [data, setData] = useState<any>({})
@@ -7,14 +8,17 @@ export default function ManagerDashboard({ onNotify }: { onNotify?: (msg: string
   const load = async () => {
     setLoading(true)
     try {
+      const branchId = parseInt(localStorage.getItem('selected_branch') || '0')
+      const h = api.authHeader()
+      const params = branchId ? `?branch_id=${branchId}` : ''
       const [salesR, ordersR, stockR, reservationsR, poR, shiftsR, healthR] = await Promise.all([
-        fetch('/api/v1/analytics/sales-targets'),
-        fetch('/api/v1/orders?branch_id=0'),
-        fetch('/api/v1/inventory/ingredients?branch_id=0'),
-        fetch('/api/v1/reservations?date=' + new Date().toISOString().slice(0, 10)),
-        fetch('/api/v1/suppliers/orders?status=pending'),
-        fetch('/api/v1/shifts?active=1'),
-        fetch('/api/v1/system/health')
+        fetch('/api/v1/analytics/sales-targets', { headers: h }),
+        fetch(`/api/v1/orders?status=open${params}`, { headers: h }),
+        fetch(`/api/v1/inventory/ingredients${params}`, { headers: h }),
+        fetch(`/api/v1/reservations?date=${new Date().toISOString().slice(0, 10)}`, { headers: h }),
+        fetch('/api/v1/suppliers/orders?status=pending', { headers: h }),
+        fetch('/api/v1/shifts?active=1', { headers: h }),
+        fetch('/api/v1/system/health', { headers: h })
       ])
 
       setData({
@@ -26,7 +30,7 @@ export default function ManagerDashboard({ onNotify }: { onNotify?: (msg: string
         activeShifts: shiftsR.ok ? await shiftsR.json() : [],
         health: healthR.ok ? await healthR.json() : null
       })
-    } catch { /* ignore */ }
+    } catch { onNotify?.('Napaka pri nalaganju podatkov', true) }
     setLoading(false)
   }
 
