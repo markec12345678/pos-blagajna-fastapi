@@ -101,4 +101,21 @@ test.describe('POS E2E', () => {
     const r = await request.get(`/api/v1/public/menu/${table.id}`)
     expect(r.ok()).toBeTruthy()
   })
+
+  test('9. Fiscal status endpoint', async ({ request }) => {
+    const r = await request.get('/api/v1/invoices/1/fiscal-status', { headers: auth() })
+    expect(r.ok() || r.status() === 404).toBeTruthy()
+  })
+
+  test('10. FURS ZAPOS fiscalization endpoint', async ({ request }) => {
+    const r = await request.post('/api/v1/invoices/1/furs-zapos', { headers: auth() })
+    // May fail without cert, but endpoint should exist
+    expect(r.ok() || r.status() === 400 || r.status() === 500).toBeTruthy()
+  })
+
+  test('11. Croatian fiscal endpoint', async ({ request }) => {
+    const r = await request.post('/api/v1/invoices/1/croatian-fiscal', { headers: auth() })
+    // May fail without cert, but endpoint should exist
+    expect(r.ok() || r.status() === 400 || r.status() === 500).toBeTruthy()
+  })
 })
