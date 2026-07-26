@@ -930,3 +930,25 @@ export async function transferTable(fromTableId: number, toTableId: number) {
   })
   return r.json()
 }
+
+// Fiscal operations
+export async function fiscalizeFursZapos(invoiceId: number): Promise<any> {
+  const r = await fetch(`${API}/invoices/${invoiceId}/furs-zapos`, { method: 'POST', headers: h() })
+  const d = await r.json()
+  if (!r.ok) throw new Error(d.detail || 'FURS ZAPOS fiscalization failed')
+  return d
+}
+
+export async function fiscalizeCroatian(invoiceId: number): Promise<any> {
+  const r = await fetch(`${API}/invoices/${invoiceId}/croatian-fiscal`, { method: 'POST', headers: h() })
+  const d = await r.json()
+  if (!r.ok) throw new Error(d.detail || 'Croatian fiscalization failed')
+  return d
+}
+
+export async function getFiscalStatus(invoiceId: number): Promise<any> {
+  const r = await fetch(`${API}/invoices/${invoiceId}/fiscal-status`, { headers: h() })
+  const d = await r.json()
+  if (!r.ok) throw new Error(d.detail || 'Failed to get fiscal status')
+  return d
+}

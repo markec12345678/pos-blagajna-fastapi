@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 import logging
 import traceback
 
@@ -30,9 +31,13 @@ def register_error_handlers(app: FastAPI):
             content={"detail": detail},
         )
 
-    @app.exception_handler(422)
-    async def validation_handler(request: Request, exc):
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        errors = []
+        for error in exc.errors():
+            loc = " -> ".join(str(l) for l in error.get("loc", []))
+            errors.append({"field": loc, "message": error.get("msg", "")})
         return JSONResponse(
             status_code=422,
-            content={"detail": "Validation error"},
+            content={"detail": "Validation error", "errors": errors}
         )

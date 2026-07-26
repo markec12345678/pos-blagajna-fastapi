@@ -194,6 +194,8 @@ const SL: LangDict = {
   'nav.marketing-v3': 'Marketing V3',
   'nav.reports-v3': 'Porocila V3',
   'nav.employees-v2': 'Zaposleni V2',
+  'nav.furs-zapos': 'FURS ZAPOS',
+  'nav.croatian-fiscal': 'Hrvaška fiskal.',
 
   // Common actions
   'common.save': 'Shrani',
@@ -416,6 +418,27 @@ const SL: LangDict = {
   'house_accounts.payment_recorded': 'Plačilo zabeleženo',
   'house_accounts.charge_recorded': 'Bremenitev zabeležena',
   'house_accounts.manual_charge': 'Ročna bremenitev',
+
+  // Fiscal
+  'furs_zapos': 'FURS ZAPOS',
+  'furs_zapos_description': 'Upravljanje fiskalizacije z FURS ZAPOS sistemom za slovenske račune',
+  'furs_zapos_status': 'Status fiskalizacije',
+  'furs_zapos_eor': 'EOR (elektronska številka)',
+  'croatian_fiscal': 'Hrvaška fiskalizacija',
+  'croatian_fiscal_description': 'Upravljanje fiskalizacije z hrvaškim CIS sistemom za eRačune',
+  'croatian_zki': 'ZKI (zaščitna koda)',
+  'croatian_jir': 'JIR (enotna številka računa)',
+  'croatian_oib': 'OIB (hrvaška davčna številka)',
+  'fiscal_status': 'Status fiskalizacije',
+  'fiscal_pending': 'Čaka',
+  'fiscal_sent': 'Poslano',
+  'fiscal_verified': 'Verificirano',
+  'fiscal_error': 'Napaka',
+  'fiscalize': 'Fiskaliziraj',
+  'fiscalizing': 'Fiskalizacija...',
+  'fiscalization_success': 'Fiskalizacija uspešna',
+  'fiscalization_error': 'Napaka pri fiskalizaciji',
+  'invoice_number': 'Številka računa',
 
   // Time
   'time.today': 'Danes',
@@ -842,6 +865,27 @@ const EN: LangDict = {
   'house_accounts.payment_recorded': 'Payment recorded',
   'house_accounts.charge_recorded': 'Charge recorded',
   'house_accounts.manual_charge': 'Manual charge',
+
+  // Fiscal
+  'furs_zapos': 'FURS ZAPOS',
+  'furs_zapos_description': 'Manage fiscalization with FURS ZAPOS system for Slovenian receipts',
+  'furs_zapos_status': 'Fiscalization Status',
+  'furs_zapos_eor': 'EOR (Electronic Receipt Number)',
+  'croatian_fiscal': 'Croatian Fiscalization',
+  'croatian_fiscal_description': 'Manage fiscalization with Croatian CIS system for eRačun',
+  'croatian_zki': 'ZKI (Protection Code)',
+  'croatian_jir': 'JIR (Journal Invoice Number)',
+  'croatian_oib': 'OIB (Croatian Tax ID)',
+  'fiscal_status': 'Fiscal Status',
+  'fiscal_pending': 'Pending',
+  'fiscal_sent': 'Sent',
+  'fiscal_verified': 'Verified',
+  'fiscal_error': 'Error',
+  'fiscalize': 'Fiscalize',
+  'fiscalizing': 'Fiscalizing...',
+  'fiscalization_success': 'Fiscalization successful',
+  'fiscalization_error': 'Fiscalization error',
+  'invoice_number': 'Invoice Number',
 
   // Time
   'time.today': 'Today',
