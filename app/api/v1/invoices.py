@@ -9,8 +9,14 @@ from app.models.branch import Branch
 from app.models.settings import Setting
 from app.api.v1.audit_log import log_action
 from app.core.eracun import generate_eracun_xml, validate_eracun_xml, generate_furs_payload
+from app.core.furs_zapos import fiscalize_zapos
+from app.core.croatian_fiscal import fiscalize_croatian
+from app.schemas.fiscal import FursZaposRequest, CroatianFiscalRequest
 from datetime import datetime, date
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -488,6 +494,121 @@ def _read_seller(db: Session) -> tuple[str, str, str]:
             elif key == "company_address":
                 seller_address = s.value
     return seller_name, seller_tax_id, seller_address
+
+
+@router.post("/{invoice_id}/furs-zapos")
+def fiscalize_invoice_furs_zapos(invoice_id: int, req: FursZaposRequest, db: Session = Depends(get_db)):
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv.furs_zapos_status == "fiscalized":
+        raise HTTPException(400, "Invoice already fiscalized with FURS ZAPOS")
+
+    items_data = json.loads(inv.items) if inv.items else []
+    seller_name, seller_tax_id, seller_address = _read_seller(db)
+
+    try:
+        result = fiscalize_zapos(
+            tax_number=req.tax_number,
+            invoice_number=inv.invoice_number,
+            issued_at=inv.issued_at or datetime.now(),
+            items=items_data,
+            subtotal=inv.subtotal,
+            tax_total=inv.tax_total,
+            total=inv.total,
+            payment_method=req.payment_method,
+            operator_id=req.operator_id,
+            private_key_path=req.private_key_path,
+            cert_path=req.cert_path,
+            key_path=req.key_path,
+            env=req.environment,
+        )
+    except Exception as e:
+        logger.error("FURS ZAPOS fiscalization error: %s", e)
+        raise HTTPException(500, "Fiscalization failed")
+
+    if result["success"]:
+        inv.furs_zapos_status = "fiscalized"
+        inv.furs_zapos_eor = result.get("eor", "")
+        db.commit()
+        log_action(db, "furs_zapos", "invoice", inv.id, details=f"FURS ZAPOS: {inv.invoice_number}")
+    else:
+        inv.furs_zapos_status = "error"
+        db.commit()
+
+    return {
+        "success": result["success"],
+        "eor": result.get("eor", ""),
+        "zoi": result.get("zoi", ""),
+        "qr_data": result.get("qr_data", ""),
+        "errors": result.get("errors", []),
+        "note": result.get("note", ""),
+    }
+
+
+@router.post("/{invoice_id}/croatian-fiscal")
+def fiscalize_invoice_croatian(invoice_id: int, req: CroatianFiscalRequest, db: Session = Depends(get_db)):
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv.croatian_jir:
+        raise HTTPException(400, "Invoice already fiscalized with Croatian CIS")
+
+    items_data = json.loads(inv.items) if inv.items else []
+
+    try:
+        result = fiscalize_croatian(
+            oib=req.oib,
+            invoice_number=inv.invoice_number,
+            issued_at=inv.issued_at or datetime.now(),
+            items=items_data,
+            subtotal=inv.subtotal,
+            tax_total=inv.tax_total,
+            total=inv.total,
+            payment_method=req.payment_method,
+            operator_id=req.operator_id,
+            private_key_path=req.private_key_path,
+            cert_path=req.cert_path,
+            key_path=req.key_path,
+            env=req.environment,
+        )
+    except Exception as e:
+        logger.error("Croatian fiscalization error: %s", e)
+        raise HTTPException(500, "Fiscalization failed")
+
+    if result["success"]:
+        inv.croatian_zki = result.get("zki", "")
+        inv.croatian_jir = result.get("jir", "")
+        db.commit()
+        log_action(db, "croatian_fiscal", "invoice", inv.id, details=f"CIS: {inv.invoice_number}")
+    else:
+        inv.croatian_jir = "error"
+        db.commit()
+
+    return {
+        "success": result["success"],
+        "jir": result.get("jir", ""),
+        "zki": result.get("zki", ""),
+        "errors": result.get("errors", []),
+        "note": result.get("note", ""),
+    }
+
+
+@router.get("/{invoice_id}/fiscal-status")
+def get_fiscal_status(invoice_id: int, db: Session = Depends(get_db)):
+    inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+
+    return {
+        "invoice_id": inv.id,
+        "invoice_number": inv.invoice_number,
+        "furs_zapos_status": inv.furs_zapos_status or "",
+        "furs_zapos_eor": inv.furs_zapos_eor or "",
+        "croatian_zki": inv.croatian_zki or "",
+        "croatian_jir": inv.croatian_jir or "",
+        "eracun_status": inv.eracun_status or "",
+    }
 
 
 @router.get("/stats")

@@ -11,6 +11,7 @@ from app.api.v1.backup import start_auto_backup
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.request_id import RequestIdMiddleware
+from app.core.error_handler import register_error_handlers
 from app.models.user import User
 from app.models.category import Category
 from app.models.menu_item import MenuItem
@@ -337,6 +338,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=500)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    register_error_handlers(app)
 
     import logging, time
     logger = logging.getLogger("pos.access")
