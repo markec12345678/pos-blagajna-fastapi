@@ -13,12 +13,12 @@ describe('FursZaposPage', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
   it('renders without crashing', () => {
-    render(<FursZaposPage />)
+    render(<FursZaposPage onNotify={vi.fn()} />)
     expect(document.body).toBeTruthy()
   })
 
   it('shows page heading', () => {
-    render(<FursZaposPage />)
+    render(<FursZaposPage onNotify={vi.fn()} />)
     const headings = screen.getAllByText(/FURS|ZAPOS|Fiskal/i)
     expect(headings.length).toBeGreaterThan(0)
   })

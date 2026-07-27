@@ -1,9 +1,16 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from './i18n'
 
 const DISMISSED_KEY = 'pos_install_dismissed'
 const INSTALLED_KEY = 'pos_installed'
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
 export default function InstallPrompt() {
+  const { t } = useTranslation()
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [show, setShow] = useState(false)
   const [installing, setInstalling] = useState(false)
@@ -50,25 +57,20 @@ export default function InstallPrompt() {
   if (!show || !deferred) return null
 
   return (
-    <div className="install-prompt" role="alert" aria-label="Namestitev aplikacije">
+    <div className="install-prompt" role="alert" aria-label={t('install_app')}>
       <div className="install-prompt-icon">📱</div>
       <div className="install-prompt-text">
-        <div className="install-prompt-title">Namesti POS aplikacijo</div>
-        <div className="install-prompt-subtitle">Dodaj na začetni zaslon za hiter dostop brez brskalnika</div>
+        <div className="install-prompt-title">{t('install_app')}</div>
+        <div className="install-prompt-subtitle">{t('install_description')}</div>
       </div>
       <div className="install-prompt-actions">
-        <button onClick={install} className="btn btn-primary btn-sm" disabled={installing} aria-label="Namesti aplikacijo">
-          {installing ? '⏳' : 'Namesti'}
+        <button onClick={install} className="btn btn-primary btn-sm" disabled={installing} aria-label={t('install')}>
+          {installing ? '⏳' : t('install')}
         </button>
-        <button onClick={dismiss} className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} aria-label="Zapri">
+        <button onClick={dismiss} className="btn btn-ghost btn-sm" style={{ padding: '4px 8px' }} aria-label={t('dismiss')}>
           ✕
         </button>
       </div>
     </div>
   )
-}
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }

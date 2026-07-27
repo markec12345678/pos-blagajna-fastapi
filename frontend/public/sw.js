@@ -1,12 +1,14 @@
-const CACHE_NAME = 'pos-v1'
-const STATIC_CACHE = 'pos-static-v1'
-const API_CACHE = 'pos-api-v1'
+const CACHE_NAME = 'ury-pos-v2'
+const STATIC_CACHE = 'ury-static-v2'
+const API_CACHE = 'ury-api-v2'
+const OFFLINE_URL = '/offline.html'
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon-192.svg',
   '/icon-512.svg',
+  OFFLINE_URL,
 ]
 
 self.addEventListener('install', (e) => {
@@ -25,18 +27,17 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
-  // Skip non-http(s) requests (e.g. chrome-extension://)
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return
   if (e.request.method !== 'GET') return
 
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(networkFirst(e.request))
   } else {
-    e.respondWith(cacheFirst(e.request))
+    e.respondWith(cacheFirstWithFallback(e.request))
   }
 })
 
-async function cacheFirst(req) {
+async function cacheFirstWithFallback(req) {
   const cached = await caches.match(req)
   if (cached) return cached
   try {
@@ -47,7 +48,8 @@ async function cacheFirst(req) {
     }
     return res
   } catch {
-    return new Response('Offline', { status: 503 })
+    const fallback = await caches.match(OFFLINE_URL)
+    return fallback || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/html' } })
   }
 }
 
@@ -70,6 +72,56 @@ self.addEventListener('message', (e) => {
   if (e.data === 'skipWaiting') self.skipWaiting()
   if (e.data === 'sync') syncQueue()
 })
+
+self.addEventListener('push', (e) => {
+  const data = e.data ? e.data.json() : {}
+  const title = data.title || 'URY POS'
+  const options = {
+    body: data.body || 'Nova obvestila',
+    icon: '/icon-192.svg',
+    badge: '/icon-192.svg',
+    data: data.url || '/',
+    actions: data.actions || [],
+    tag: data.tag || 'ury-notification',
+    renotify: true,
+  }
+  e.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  const url = e.notification.data || '/'
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.registration.scope) && 'focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      return self.clients.openWindow(url)
+    })
+  )
+})
+
+self.addEventListener('sync', (e) => {
+  if (e.tag === 'sync-orders') {
+    e.waitUntil(syncQueue())
+  }
+})
+
+self.addEventListener('periodicsync', (e) => {
+  if (e.tag === 'menu-update') {
+    e.waitUntil(updateMenuCache())
+  }
+})
+
+async function updateMenuCache() {
+  try {
+    const cache = await caches.open(STATIC_CACHE)
+    await cache.add('/api/v1/menu')
+  } catch {}
+}
 
 async function syncQueue() {
   const db = await openDB()

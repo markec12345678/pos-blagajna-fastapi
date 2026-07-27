@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getQueueCount } from './offline-cache'
-import { authHeader } from './api'
 
 export default function OfflineIndicator() {
   const [offline, setOffline] = useState(!navigator.onLine)
@@ -74,8 +73,8 @@ export default function OfflineIndicator() {
     <div className={`offline-banner ${offline ? 'offline' : 'syncing'}`}>
       {offline && !reconnecting && (
         <div className="offline-content">
-          <span className="offline-icon">📵</span>
-          <span>Povezava prekinjena</span>
+          <span className="offline-icon">⚡</span>
+          <span>Offline način - naročila se bodo poslala samodejno</span>
           {lastOnline && <span className="last-online">Nazadnje povezano: {formatLastOnline()}</span>}
           <button className="reconnect-btn" onClick={handleSync}>
             Ponovno poveži

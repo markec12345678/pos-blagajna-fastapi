@@ -449,6 +449,13 @@ const SL: LangDict = {
   'time.custom': 'Po meri',
   'time.from': 'Od',
   'time.to': 'Do',
+
+  // PWA
+  'install_app': 'Namestite aplikacijo',
+  'install_description': 'Namestite URY POS za hitrejše delo',
+  'install': 'Namesti',
+  'dismiss': 'Zavračam',
+  'offline_mode': 'Offline način',
 }
 
 const EN: LangDict = {
@@ -896,6 +903,13 @@ const EN: LangDict = {
   'time.custom': 'Custom',
   'time.from': 'From',
   'time.to': 'To',
+
+  // PWA
+  'install_app': 'Install App',
+  'install_description': 'Install URY POS for faster work',
+  'install': 'Install',
+  'dismiss': 'Dismiss',
+  'offline_mode': 'Offline mode',
 }
 
 const DICTS: Record<string, LangDict> = { sl: SL, en: EN }
