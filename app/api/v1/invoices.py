@@ -11,7 +11,7 @@ from app.api.v1.audit_log import log_action
 from app.core.eracun import generate_eracun_xml, validate_eracun_xml, generate_furs_payload
 from app.core.furs_zapos import fiscalize_zapos
 from app.core.croatian_fiscal import fiscalize_croatian
-from app.schemas.fiscal import FursZaposRequest, CroatianFiscalRequest
+from app.schemas.fiscal import FursZaposRequest, CroatianFiscalRequest, FursZaposResponse, CroatianFiscalResponse, FiscalStatusResponse
 from datetime import datetime, date
 import json
 import logging
@@ -36,7 +36,12 @@ def _next_invoice_number(db: Session) -> str:
     return f"RAČ-{year}-{counter:04d}"
 
 
-@router.post("/generate/{order_id}")
+@router.post(
+    "/generate/{order_id}",
+    summary="Ustvari račun iz naročila",
+    description="Generira račun iz zaprtega naročila. Samodejno pošlje eRačun če je FURS auto-send omogočen.",
+    tags=["invoices"],
+)
 def generate_invoice(order_id: int, db: Session = Depends(get_db)):
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
@@ -113,7 +118,12 @@ def generate_invoice(order_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.get("")
+@router.get(
+    "",
+    summary="Seznam računov",
+    description="Vrne seznam računov z možnostjo filtriranja po branch_id in statusu.",
+    tags=["invoices"],
+)
 def list_invoices(branch_id: int = 0, status: str = "", db: Session = Depends(get_db)):
     q = db.query(Invoice)
     if branch_id:
@@ -139,7 +149,12 @@ def list_invoices(branch_id: int = 0, status: str = "", db: Session = Depends(ge
     ]
 
 
-@router.get("/{invoice_id}")
+@router.get(
+    "/{invoice_id}",
+    summary="Podrobnosti računa",
+    description="Vrne podrobnosti posameznega računa vključno z fiskalnimi podatki.",
+    tags=["invoices"],
+)
 def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -496,7 +511,13 @@ def _read_seller(db: Session) -> tuple[str, str, str]:
     return seller_name, seller_tax_id, seller_address
 
 
-@router.post("/{invoice_id}/furs-zapos")
+@router.post(
+    "/{invoice_id}/furs-zapos",
+    summary="Fiskaliziraj račun z FURS ZAPOS",
+    description="Pošlje račun na FURS prek posebne davčne blagajne (ZAPOS). Vrne EOR, ZOI in QR podatke.",
+    response_model=FursZaposResponse,
+    tags=["fiscal"],
+)
 def fiscalize_invoice_furs_zapos(invoice_id: int, req: FursZaposRequest, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -546,7 +567,13 @@ def fiscalize_invoice_furs_zapos(invoice_id: int, req: FursZaposRequest, db: Ses
     }
 
 
-@router.post("/{invoice_id}/croatian-fiscal")
+@router.post(
+    "/{invoice_id}/croatian-fiscal",
+    summary="Fiskaliziraj račun z hrvaškim CIS",
+    description="Pošlje račun na hrvaški Fina CIS sistem za eRačune. Uporablja TR-2006 XML format z XML-DSig podpisom.",
+    response_model=CroatianFiscalResponse,
+    tags=["fiscal"],
+)
 def fiscalize_invoice_croatian(invoice_id: int, req: CroatianFiscalRequest, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
@@ -594,7 +621,13 @@ def fiscalize_invoice_croatian(invoice_id: int, req: CroatianFiscalRequest, db: 
     }
 
 
-@router.get("/{invoice_id}/fiscal-status")
+@router.get(
+    "/{invoice_id}/fiscal-status",
+    summary="Pridobi fiskalni status računa",
+    description="Vrne trenutni fiskalni status računa: FURS ZAPOS (EOR), hrvaški (ZKI/JIR), eRačun status.",
+    response_model=FiscalStatusResponse,
+    tags=["fiscal"],
+)
 def get_fiscal_status(invoice_id: int, db: Session = Depends(get_db)):
     inv = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not inv:
